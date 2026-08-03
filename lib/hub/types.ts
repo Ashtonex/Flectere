@@ -14,6 +14,7 @@ export type Client = {
   id: string;
   name: string;
   contact_email: string | null;
+  phone: string | null;
   notes: string | null;
   created_at: string;
 };
@@ -50,4 +51,21 @@ export type Expense = {
   incurred_on: string;
   notes: string | null;
   created_at: string;
+};
+
+export type Withdrawal = {
+  id: string;
+  account_id: string;
+  amount: number;
+  withdrawn_on: string;
+  notes: string | null;
+  created_at: string;
+};
+
+export type ClientDocument = {
+  id: string;
+  client_id: string;
+  storage_path: string;
+  label: string;
+  uploaded_at: string;
 };

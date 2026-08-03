@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import {
   computeAccountAnalytics,
@@ -5,7 +6,13 @@ import {
   formatCurrency,
   formatPercent,
 } from "@/lib/hub/analytics";
-import type { Client, Expense, PerformanceEntry, TradingAccount } from "@/lib/hub/types";
+import type {
+  Client,
+  Expense,
+  PerformanceEntry,
+  TradingAccount,
+  Withdrawal,
+} from "@/lib/hub/types";
 import {
   addExpenseAction,
   addPerformanceEntryAction,
@@ -22,24 +29,27 @@ const submitClasses =
 export default async function TradingPage() {
   const supabase = createClient();
 
-  const [{ data: accounts }, { data: entries }, { data: expenses }, { data: clients }] =
+  const [{ data: accounts }, { data: entries }, { data: expenses }, { data: withdrawals }, { data: clients }] =
     await Promise.all([
       supabase.from("trading_accounts").select("*").order("created_at", { ascending: false }),
       supabase.from("performance_entries").select("*"),
       supabase.from("expenses").select("*"),
+      supabase.from("withdrawals").select("*"),
       supabase.from("clients").select("*").order("name"),
     ]);
 
   const accountList = (accounts ?? []) as TradingAccount[];
   const entryList = (entries ?? []) as PerformanceEntry[];
   const expenseList = (expenses ?? []) as Expense[];
+  const withdrawalList = (withdrawals ?? []) as Withdrawal[];
   const clientList = (clients ?? []) as Client[];
 
   const analytics = accountList.map((account) =>
     computeAccountAnalytics(
       account,
       entryList.filter((e) => e.account_id === account.id),
-      expenseList.filter((e) => e.account_id === account.id)
+      expenseList.filter((e) => e.account_id === account.id),
+      withdrawalList.filter((w) => w.account_id === account.id)
     )
   );
   const portfolio = computePortfolioTotals(analytics);
@@ -53,7 +63,13 @@ export default async function TradingPage() {
         </p>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
+          <p className="text-xs uppercase tracking-widest2 text-fog-500">Total Value</p>
+          <p className="mt-2 font-display text-2xl text-fog-100">
+            {formatCurrency(portfolio.totalValue)}
+          </p>
+        </div>
         <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
           <p className="text-xs uppercase tracking-widest2 text-fog-500">Total Spend</p>
           <p className="mt-2 font-display text-2xl text-fog-100">
@@ -61,9 +77,9 @@ export default async function TradingPage() {
           </p>
         </div>
         <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
-          <p className="text-xs uppercase tracking-widest2 text-fog-500">Total Return</p>
+          <p className="text-xs uppercase tracking-widest2 text-fog-500">Extracted</p>
           <p className="mt-2 font-display text-2xl text-fog-100">
-            {formatCurrency(portfolio.totalReturn)}
+            {formatCurrency(portfolio.totalExtracted)}
           </p>
         </div>
         <div className="rounded-xl border border-gold/25 bg-gold/5 p-5">
@@ -83,7 +99,8 @@ export default async function TradingPage() {
               <th className="px-4 py-3">Type</th>
               <th className="px-4 py-3">Client</th>
               <th className="px-4 py-3">Equity</th>
-              <th className="px-4 py-3">Spend</th>
+              <th className="px-4 py-3">Extracted</th>
+              <th className="px-4 py-3">Total Value</th>
               <th className="px-4 py-3">ROI</th>
             </tr>
           </thead>
@@ -96,18 +113,27 @@ export default async function TradingPage() {
                   <td className="px-4 py-3 text-fog-100">{account.label}</td>
                   <td className="px-4 py-3 text-fog-400">{account.broker_or_prop_firm ?? "—"}</td>
                   <td className="px-4 py-3 capitalize text-fog-400">{account.account_type}</td>
-                  <td className="px-4 py-3 text-fog-400">{client?.name ?? "—"}</td>
+                  <td className="px-4 py-3 text-fog-400">
+                    {client ? (
+                      <Link href={`/hub/clients/${client.id}`} className="hover:text-gold">
+                        {client.name}
+                      </Link>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
                   <td className="px-4 py-3 text-fog-200">
                     {formatCurrency(a.latestEquity ?? a.latestBalance)}
                   </td>
-                  <td className="px-4 py-3 text-fog-400">{formatCurrency(a.totalSpend)}</td>
+                  <td className="px-4 py-3 text-fog-400">{formatCurrency(a.extractedValue)}</td>
+                  <td className="px-4 py-3 text-fog-200">{formatCurrency(a.totalValue)}</td>
                   <td className="px-4 py-3 text-fog-200">{formatPercent(a.roi)}</td>
                 </tr>
               );
             })}
             {accountList.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-fog-600">
+                <td colSpan={8} className="px-4 py-8 text-center text-fog-600">
                   No accounts yet — add one below.
                 </td>
               </tr>
@@ -124,9 +150,15 @@ export default async function TradingPage() {
               <label className={labelClasses}>Name</label>
               <input name="name" required className={inputClasses} />
             </div>
-            <div>
-              <label className={labelClasses}>Contact Email</label>
-              <input name="contact_email" type="email" className={inputClasses} />
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className={labelClasses}>Contact Email</label>
+                <input name="contact_email" type="email" className={inputClasses} />
+              </div>
+              <div>
+                <label className={labelClasses}>Phone</label>
+                <input name="phone" type="tel" className={inputClasses} placeholder="+1 555 123 4567" />
+              </div>
             </div>
             <button type="submit" className={submitClasses}>
               Add Client

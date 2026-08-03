@@ -12,11 +12,14 @@ export async function createClientAction(formData: FormData) {
   const supabase = createClient();
 
   const name = String(formData.get("name") || "").trim();
-  const contactEmail = String(formData.get("contact_email") || "").trim() || null;
   if (!name) return;
 
-  await supabase.from("clients").insert({ name, contact_email: contactEmail });
+  const contactEmail = String(formData.get("contact_email") || "").trim() || null;
+  const phone = String(formData.get("phone") || "").trim() || null;
+
+  await supabase.from("clients").insert({ name, contact_email: contactEmail, phone });
   revalidatePath("/hub/trading");
+  revalidatePath("/hub/clients");
 }
 
 export async function createAccountAction(formData: FormData) {
@@ -39,6 +42,7 @@ export async function createAccountAction(formData: FormData) {
   });
 
   revalidatePath("/hub/trading");
+  revalidatePath("/hub/clients");
 }
 
 export async function addPerformanceEntryAction(formData: FormData) {

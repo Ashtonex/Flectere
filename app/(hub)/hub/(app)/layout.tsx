@@ -30,6 +30,7 @@ export default async function HubAppLayout({
     role === "internal"
       ? [
           { href: "/hub/leads", label: "Leads" },
+          { href: "/hub/clients", label: "Clients" },
           { href: "/hub/trading", label: "Trading" },
         ]
       : [{ href: "/hub/portal", label: "Portfolio" }];
