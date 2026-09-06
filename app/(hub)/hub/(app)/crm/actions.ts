@@ -136,3 +136,63 @@ export async function updateOpportunityStageAction(formData: FormData) {
   await supabase.from("crm_opportunities").update({ stage }).eq("id", id);
   revalidateCrm();
 }
+
+export async function updateOpportunityAction(formData: FormData) {
+  const supabase = await createClient();
+
+  const id = String(formData.get("id") || "");
+  const title = String(formData.get("title") || "").trim();
+  if (!id || !title) return;
+
+  const clientId = nullableString(formData, "client_id");
+  const businessArmId = nullableString(formData, "business_arm_id");
+  const serviceId = nullableString(formData, "service_id");
+  const stage = String(formData.get("stage") || "lead");
+  const value = nullableNumber(formData, "value");
+  const setupFee = nullableNumber(formData, "setup_fee");
+  const monthlyRecurring = nullableNumber(formData, "monthly_recurring");
+  const contractMonths = nullableNumber(formData, "contract_months");
+  const probability = Number(formData.get("probability") || 25);
+  const expectedCloseOn = nullableString(formData, "expected_close_on");
+  const notes = nullableString(formData, "notes");
+
+  // Compute total contract value if setup + monthly retainer provided
+  let totalContractValue = nullableNumber(formData, "total_contract_value");
+  if (!totalContractValue && (setupFee || monthlyRecurring)) {
+    totalContractValue = (setupFee ?? 0) + (monthlyRecurring ?? 0) * (contractMonths ?? 12);
+  } else if (!totalContractValue && value) {
+    totalContractValue = value;
+  }
+
+  await supabase
+    .from("crm_opportunities")
+    .update({
+      title,
+      client_id: clientId,
+      business_arm_id: businessArmId,
+      service_id: serviceId,
+      stage,
+      value: value ?? totalContractValue,
+      setup_fee: setupFee,
+      monthly_recurring: monthlyRecurring,
+      contract_months: contractMonths,
+      total_contract_value: totalContractValue,
+      probability,
+      expected_close_on: expectedCloseOn,
+      notes,
+    })
+    .eq("id", id);
+
+  revalidateCrm();
+}
+
+export async function deleteOpportunityAction(formData: FormData) {
+  const supabase = await createClient();
+
+  const id = String(formData.get("id") || "");
+  if (!id) return;
+
+  await supabase.from("crm_opportunities").delete().eq("id", id);
+  revalidateCrm();
+}
+

@@ -171,3 +171,116 @@ export async function markInvoicePaidAction(formData: FormData) {
 
   revalidateBilling(clientId ?? undefined);
 }
+
+export async function uploadPaymentInvoiceAction(formData: FormData) {
+  const supabase = await createClient();
+
+  const clientId = String(formData.get("client_id") || "");
+  const title = String(formData.get("title") || "").trim();
+  const amount = Number(formData.get("amount") || 0);
+  const businessArmId = nullableString(formData, "business_arm_id");
+  const opportunityId = nullableString(formData, "opportunity_id");
+  const dueOn = nullableString(formData, "due_on");
+  const notes = nullableString(formData, "notes");
+  const file = formData.get("file");
+
+  if (!clientId || !title || amount <= 0) return;
+
+  let storagePath: string | null = null;
+  if (file instanceof File && file.size > 0) {
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+    const path = `invoices/${clientId}/${Date.now()}-${safeName}`;
+    const { error: uploadErr } = await supabase.storage
+      .from("client-documents")
+      .upload(path, file, { contentType: file.type || undefined });
+    if (!uploadErr) {
+      storagePath = path;
+    }
+  }
+
+  const issuedOn = new Date().toISOString().slice(0, 10);
+  const invNumber = invoiceNumber();
+
+  // Create revenue record
+  const { data: revenueRecord } = await supabase
+    .from("revenue_records")
+    .insert({
+      client_id: clientId,
+      business_arm_id: businessArmId,
+      opportunity_id: opportunityId,
+      amount,
+      category: "service_fee",
+      status: "invoiced",
+      recorded_on: issuedOn,
+      notes: `Invoice: ${title}${notes ? ` - ${notes}` : ""}`,
+    })
+    .select("id")
+    .single();
+
+  // Create invoice record
+  const { data: invoice } = await supabase
+    .from("invoices")
+    .insert({
+      invoice_number: invNumber,
+      client_id: clientId,
+      business_arm_id: businessArmId,
+      opportunity_id: opportunityId,
+      revenue_record_id: revenueRecord?.id ?? null,
+      title,
+      currency: "USD",
+      subtotal: amount,
+      tax_amount: 0,
+      total: amount,
+      issued_on: issuedOn,
+      due_on: dueOn,
+      notes: notes ? `${notes} (Uploaded Invoice File: ${storagePath ?? "None"})` : `Uploaded Invoice File: ${storagePath ?? "None"}`,
+      status: "sent",
+    })
+    .select("id")
+    .single();
+
+  if (invoice?.id) {
+    await supabase.from("invoice_items").insert({
+      invoice_id: invoice.id,
+      description: title,
+      quantity: 1,
+      unit_price: amount,
+      line_total: amount,
+    });
+  }
+
+  // Also link as a client document in documents table if file was attached
+  if (storagePath) {
+    await supabase.from("documents").insert({
+      client_id: clientId,
+      storage_path: storagePath,
+      label: `Invoice ${invNumber} - ${title}`,
+      document_type: "invoice",
+      notes: `Uploaded payable invoice: $${amount}. Due: ${dueOn ?? "On receipt"}`,
+    });
+  }
+
+  revalidateBilling(clientId);
+}
+
+export async function validateInvoiceAction(formData: FormData) {
+  const supabase = await createClient();
+
+  const invoiceId = String(formData.get("invoice_id") || "");
+  const status = String(formData.get("status") || "paid");
+  const clientId = nullableString(formData, "client_id");
+  const revenueRecordId = nullableString(formData, "revenue_record_id");
+
+  if (!invoiceId) return;
+
+  await supabase.from("invoices").update({ status }).eq("id", invoiceId);
+
+  if (revenueRecordId && status === "paid") {
+    await supabase.from("revenue_records").update({ status: "received" }).eq("id", revenueRecordId);
+  } else if (revenueRecordId && status === "void") {
+    await supabase.from("revenue_records").update({ status: "cancelled" }).eq("id", revenueRecordId);
+  }
+
+  revalidateBilling(clientId ?? undefined);
+}
+

@@ -121,6 +121,7 @@ export default async function CrmPage() {
           leads={leadList}
           arms={armList}
           services={serviceList}
+          revenueRecords={revenueList}
         />
       </div>
 

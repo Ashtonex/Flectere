@@ -199,6 +199,88 @@ export default async function DashboardPage() {
         </div>
       </div>
 
+      {/* Pending Invoices & Payment Action Table */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-sm uppercase tracking-wider text-fog-400 font-bold">Pending & Overdue Invoices</h2>
+            <p className="text-xs text-fog-500">Live invoices awaiting client wire transfers or confirmation</p>
+          </div>
+          <Link
+            href="/hub/invoices"
+            className="text-xs text-gold hover:underline font-medium"
+          >
+            Manage All Invoices ({invoiceList.length}) ➔
+          </Link>
+        </div>
+
+        <div className="overflow-x-auto rounded-xl border border-white/10">
+          <table className="w-full text-left text-sm">
+            <thead className="border-b border-white/10 text-xs uppercase tracking-widest2 text-fog-500">
+              <tr>
+                <th className="px-4 py-3">Invoice Number</th>
+                <th className="px-4 py-3">Client</th>
+                <th className="px-4 py-3">Arm</th>
+                <th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3">Amount Due</th>
+                <th className="px-4 py-3">Due Date</th>
+                <th className="px-4 py-3">Action</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/5">
+              {invoiceList
+                .filter((inv) => ["sent", "overdue", "draft"].includes(inv.status))
+                .slice(0, 6)
+                .map((invoice) => (
+                  <tr key={invoice.id} className="hover:bg-white/[0.02]">
+                    <td className="px-4 py-3 font-mono font-medium text-fog-100">
+                      {invoice.invoice_number}
+                    </td>
+                    <td className="px-4 py-3 text-fog-300 font-medium">
+                      {clientName(invoice.client_id, clientList)}
+                    </td>
+                    <td className="px-4 py-3 text-fog-400">{armName(invoice.business_arm_id, armList)}</td>
+                    <td className="px-4 py-3">
+                      <span
+                        className={`inline-block rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
+                          invoice.status === "overdue"
+                            ? "bg-rose-500/20 text-rose-400 border border-rose-500/30"
+                            : invoice.status === "sent"
+                            ? "bg-sky-500/20 text-sky-400 border border-sky-500/30"
+                            : "bg-white/5 text-fog-400 border border-white/10"
+                        }`}
+                      >
+                        {labelize(invoice.status)}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 font-mono font-bold text-white">
+                      {formatCurrency(invoice.total, invoice.currency)}
+                    </td>
+                    <td className="px-4 py-3 text-fog-500 text-xs">
+                      {invoice.due_on ? new Date(invoice.due_on).toLocaleDateString() : "Immediate"}
+                    </td>
+                    <td className="px-4 py-3">
+                      <Link
+                        href="/hub/invoices"
+                        className="rounded bg-gold/10 hover:bg-gold hover:text-ink-950 text-gold text-xs font-semibold px-2.5 py-1 transition border border-gold/30"
+                      >
+                        Validate ➔
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
+              {invoiceList.filter((inv) => ["sent", "overdue", "draft"].includes(inv.status)).length === 0 && (
+                <tr>
+                  <td colSpan={7} className="px-4 py-8 text-center text-fog-600">
+                    Zero open or overdue invoices pending payment.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
       <div className="overflow-x-auto rounded-xl border border-white/10">
         <table className="w-full text-left text-sm">
           <thead className="border-b border-white/10 text-xs uppercase tracking-widest2 text-fog-500">

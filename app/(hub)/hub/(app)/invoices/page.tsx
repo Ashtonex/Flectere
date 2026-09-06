@@ -11,13 +11,18 @@ import type {
   InvoiceItem,
   Service,
 } from "@/lib/hub/types";
-import { createInvoiceAction, markInvoicePaidAction, sendInvoiceEmailAction } from "./actions";
+import {
+  createInvoiceAction,
+  uploadPaymentInvoiceAction,
+  validateInvoiceAction,
+  sendInvoiceEmailAction,
+} from "./actions";
 
 const inputClasses =
   "w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-fog-100 outline-none transition-colors focus:border-gold/50";
-const labelClasses = "mb-1.5 block text-xs uppercase tracking-widest2 text-fog-500";
+const labelClasses = "mb-1.5 block text-xs uppercase tracking-widest2 text-fog-500 font-medium";
 const submitClasses =
-  "mt-2 rounded-lg border border-gold/50 bg-ink-900 px-4 py-2 text-sm font-medium text-gold transition-colors hover:border-gold hover:bg-gold hover:text-ink-950";
+  "mt-2 rounded-lg border border-gold/50 bg-gold px-4 py-2 text-sm font-semibold text-ink-950 transition-colors hover:bg-gold-bright cursor-pointer";
 
 export default async function InvoicesPage() {
   const supabase = await createClient();
@@ -51,143 +56,252 @@ export default async function InvoicesPage() {
 
   const totals = {
     draft: invoiceList.filter((invoice) => invoice.status === "draft").length,
-    sent: invoiceList.filter((invoice) => invoice.status === "sent").reduce((sum, invoice) => sum + Number(invoice.total), 0),
-    paid: invoiceList.filter((invoice) => invoice.status === "paid").reduce((sum, invoice) => sum + Number(invoice.total), 0),
-    overdue: invoiceList.filter((invoice) => invoice.status === "overdue").reduce((sum, invoice) => sum + Number(invoice.total), 0),
+    sent: invoiceList
+      .filter((invoice) => invoice.status === "sent")
+      .reduce((sum, invoice) => sum + Number(invoice.total), 0),
+    paid: invoiceList
+      .filter((invoice) => invoice.status === "paid")
+      .reduce((sum, invoice) => sum + Number(invoice.total), 0),
+    overdue: invoiceList
+      .filter((invoice) => invoice.status === "overdue")
+      .reduce((sum, invoice) => sum + Number(invoice.total), 0),
   };
 
   return (
-    <div className="space-y-10">
+    <div className="space-y-8">
       <div>
-        <h1 className="font-display text-2xl text-fog-100">Invoices</h1>
+        <h1 className="font-display text-2xl md:text-3xl text-fog-100 tracking-tight">Billing & Invoices</h1>
         <p className="mt-1 text-sm text-fog-500">
-          Issue invoices, send client emails, and keep billing connected to CRM revenue.
+          Issue automated invoices, upload third-party/client payable bills, validate payments, and sync to CRM revenue.
         </p>
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
         <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
-          <p className="text-xs uppercase tracking-widest2 text-fog-500">Drafts</p>
+          <p className="text-xs uppercase tracking-widest2 text-fog-500">Draft Invoices</p>
           <p className="mt-2 font-display text-2xl text-fog-100">{totals.draft}</p>
+          <p className="text-[10px] text-fog-500 font-mono mt-1">Pending issuance</p>
         </div>
         <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
-          <p className="text-xs uppercase tracking-widest2 text-fog-500">Sent</p>
+          <p className="text-xs uppercase tracking-widest2 text-fog-500">Sent & Pending</p>
           <p className="mt-2 font-display text-2xl text-fog-100">{formatCurrency(totals.sent)}</p>
+          <p className="text-[10px] text-fog-500 font-mono mt-1">Awaiting client payment</p>
         </div>
         <div className="rounded-xl border border-gold/25 bg-gold/5 p-5">
-          <p className="text-xs uppercase tracking-widest2 text-gold">Paid</p>
+          <p className="text-xs uppercase tracking-widest2 text-gold font-bold">Validated & Paid</p>
           <p className="mt-2 font-display text-2xl text-fog-100">{formatCurrency(totals.paid)}</p>
+          <p className="text-[10px] text-fog-500 font-mono mt-1">Credited to revenue ledger</p>
         </div>
-        <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
-          <p className="text-xs uppercase tracking-widest2 text-fog-500">Overdue</p>
-          <p className="mt-2 font-display text-2xl text-fog-100">{formatCurrency(totals.overdue)}</p>
+        <div className="rounded-xl border border-rose-500/20 bg-rose-500/5 p-5">
+          <p className="text-xs uppercase tracking-widest2 text-rose-400">Overdue</p>
+          <p className="mt-2 font-display text-2xl text-rose-300">{formatCurrency(totals.overdue)}</p>
+          <p className="text-[10px] text-fog-500 font-mono mt-1">Requires payment reminder</p>
         </div>
       </div>
 
       {!canSendEmail() && (
-        <div className="rounded-xl border border-gold/25 bg-gold/5 p-4 text-sm text-fog-300">
+        <div className="rounded-xl border border-gold/25 bg-gold/5 p-4 text-xs text-fog-300">
           Email sending is not configured yet. Invoice emails will be logged as failed until
-          `RESEND_API_KEY` and `FLECTERE_EMAIL_FROM` are set.
+          `RESEND_API_KEY` and `FLECTERE_EMAIL_FROM` are set in production environment variables.
         </div>
       )}
 
-      <div className="rounded-xl border border-white/10 bg-white/[0.02] p-6">
-        <h2 className="font-display text-lg text-fog-100">Create Invoice</h2>
-        <form action={createInvoiceAction} className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
+      {/* Two Primary Action Panels: Generate Invoice vs Upload Payment Invoice */}
+      <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
+        {/* Panel 1: Generate Standard Invoice */}
+        <div className="rounded-xl border border-white/10 bg-white/[0.02] p-6 space-y-4">
           <div>
-            <label className={labelClasses}>Client</label>
-            <select name="client_id" required className={inputClasses}>
-              <option value="">Select client</option>
-              {clientList.map((client) => (
-                <option key={client.id} value={client.id}>
-                  {client.name}
-                </option>
-              ))}
-            </select>
+            <h2 className="font-display text-lg text-fog-100">Issue Flectēre Invoice</h2>
+            <p className="text-xs text-fog-500">Generate a branded client invoice linked to arm and service.</p>
           </div>
-          <div>
-            <label className={labelClasses}>Business Arm</label>
-            <select name="business_arm_id" className={inputClasses}>
-              <option value="">No arm</option>
-              {armList.map((arm) => (
-                <option key={arm.id} value={arm.id}>
-                  {arm.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className={labelClasses}>Service</label>
-            <select name="service_id" className={inputClasses}>
-              <option value="">No service</option>
-              {serviceList.map((service) => (
-                <option key={service.id} value={service.id}>
-                  {service.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className={labelClasses}>Opportunity</label>
-            <select name="opportunity_id" className={inputClasses}>
-              <option value="">No opportunity</option>
-              {opportunityList.map((opportunity) => (
-                <option key={opportunity.id} value={opportunity.id}>
-                  {opportunity.title}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className={labelClasses}>Title</label>
-            <input name="title" required className={inputClasses} placeholder="e.g. Strategy retainer" />
-          </div>
-          <div>
-            <label className={labelClasses}>Line Description</label>
-            <input name="description" required className={inputClasses} placeholder="e.g. August advisory retainer" />
-          </div>
-          <div>
-            <label className={labelClasses}>Quantity</label>
-            <input name="quantity" type="number" step="0.01" defaultValue="1" className={inputClasses} />
-          </div>
-          <div>
-            <label className={labelClasses}>Unit Price</label>
-            <input name="unit_price" type="number" step="0.01" required className={inputClasses} />
-          </div>
-          <div>
-            <label className={labelClasses}>Tax</label>
-            <input name="tax_amount" type="number" step="0.01" defaultValue="0" className={inputClasses} />
-          </div>
-          <div>
-            <label className={labelClasses}>Issued On</label>
-            <input name="issued_on" type="date" required defaultValue={today} className={inputClasses} />
-          </div>
-          <div>
-            <label className={labelClasses}>Due On</label>
-            <input name="due_on" type="date" className={inputClasses} />
-          </div>
-          <div>
-            <label className={labelClasses}>Category</label>
-            <select name="category" className={inputClasses}>
-              <option value="service_fee">Service Fee</option>
-              <option value="retainer">Retainer</option>
-              <option value="commission">Commission</option>
-              <option value="subscription">Subscription</option>
-              <option value="other">Other</option>
-            </select>
-          </div>
-          <div className="lg:col-span-3">
-            <label className={labelClasses}>Notes</label>
-            <textarea name="notes" rows={3} className={inputClasses} />
-          </div>
-          <div>
-            <button type="submit" className={submitClasses} disabled={clientList.length === 0}>
-              Create Invoice
+          <form action={createInvoiceAction} className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className={labelClasses}>Client *</label>
+                <select name="client_id" required className={inputClasses}>
+                  <option value="">Select client</option>
+                  {clientList.map((client) => (
+                    <option key={client.id} value={client.id}>
+                      {client.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className={labelClasses}>Business Arm</label>
+                <select name="business_arm_id" className={inputClasses}>
+                  <option value="">No arm</option>
+                  {armList.map((arm) => (
+                    <option key={arm.id} value={arm.id}>
+                      {arm.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className={labelClasses}>Service Offering</label>
+                <select name="service_id" className={inputClasses}>
+                  <option value="">No service</option>
+                  {serviceList.map((service) => (
+                    <option key={service.id} value={service.id}>
+                      {service.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className={labelClasses}>Link Opportunity / Deal</label>
+                <select name="opportunity_id" className={inputClasses}>
+                  <option value="">No opportunity</option>
+                  {opportunityList.map((opportunity) => (
+                    <option key={opportunity.id} value={opportunity.id}>
+                      {opportunity.title}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <label className={labelClasses}>Invoice Title *</label>
+              <input name="title" required className={inputClasses} placeholder="e.g. Infrastructure Modernization Retainer" />
+            </div>
+
+            <div>
+              <label className={labelClasses}>Line Item Description *</label>
+              <input name="description" required className={inputClasses} placeholder="e.g. Monthly systems audit & optimization" />
+            </div>
+
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <label className={labelClasses}>Quantity</label>
+                <input name="quantity" type="number" step="0.01" defaultValue="1" className={inputClasses} />
+              </div>
+              <div>
+                <label className={labelClasses}>Unit Price ($) *</label>
+                <input name="unit_price" type="number" step="0.01" required className={inputClasses} placeholder="e.g. 3500" />
+              </div>
+              <div>
+                <label className={labelClasses}>Tax ($)</label>
+                <input name="tax_amount" type="number" step="0.01" defaultValue="0" className={inputClasses} />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className={labelClasses}>Issue Date *</label>
+                <input name="issued_on" type="date" required defaultValue={today} className={inputClasses} />
+              </div>
+              <div>
+                <label className={labelClasses}>Due Date</label>
+                <input name="due_on" type="date" className={inputClasses} />
+              </div>
+            </div>
+
+            <button type="submit" className={submitClasses}>
+              Generate & Issue Invoice
             </button>
+          </form>
+        </div>
+
+        {/* Panel 2: Upload Payment / Payable Invoice & Validate */}
+        <div className="rounded-xl border border-white/10 bg-white/[0.02] p-6 space-y-4">
+          <div>
+            <h2 className="font-display text-lg text-fog-100">Upload & Validate Client Bill</h2>
+            <p className="text-xs text-fog-500">
+              Attach client-supplied PDF or vendor invoice, validate amount, and record to recovery metrics.
+            </p>
           </div>
-        </form>
+
+          <form action={uploadPaymentInvoiceAction} className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className={labelClasses}>Client *</label>
+                <select name="client_id" required className={inputClasses}>
+                  <option value="">Select client</option>
+                  {clientList.map((client) => (
+                    <option key={client.id} value={client.id}>
+                      {client.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className={labelClasses}>Business Arm</label>
+                <select name="business_arm_id" className={inputClasses}>
+                  <option value="">No arm</option>
+                  {armList.map((arm) => (
+                    <option key={arm.id} value={arm.id}>
+                      {arm.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className={labelClasses}>Invoice Label / Title *</label>
+                <input name="title" required className={inputClasses} placeholder="e.g. Client Milestone 1 Invoice" />
+              </div>
+              <div>
+                <label className={labelClasses}>Payable Amount ($) *</label>
+                <input name="amount" type="number" step="0.01" required className={inputClasses} placeholder="e.g. 7500" />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className={labelClasses}>Link Opportunity (Tracks Recovery)</label>
+                <select name="opportunity_id" className={inputClasses}>
+                  <option value="">No opportunity linked</option>
+                  {opportunityList.map((opp) => (
+                    <option key={opp.id} value={opp.id}>
+                      {opp.title} ({formatCurrency(Number(opp.value ?? 0))})
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className={labelClasses}>Due Date</label>
+                <input name="due_on" type="date" className={inputClasses} />
+              </div>
+            </div>
+
+            <div>
+              <label className={labelClasses}>Upload Invoice File (PDF, DOCX, PNG) *</label>
+              <input
+                name="file"
+                type="file"
+                accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx"
+                className="block w-full text-xs text-fog-300 file:mr-3 file:rounded-lg file:border file:border-white/10 file:bg-white/[0.05] file:px-3 file:py-1.5 file:text-xs file:text-fog-200"
+              />
+            </div>
+
+            <div>
+              <label className={labelClasses}>Verification Notes & Terms</label>
+              <textarea
+                name="notes"
+                rows={2}
+                className={inputClasses}
+                placeholder="Proof of execution, contract milestone details..."
+              />
+            </div>
+
+            <button
+              type="submit"
+              className="mt-2 rounded-lg border border-emerald-500/50 bg-emerald-500 px-4 py-2 text-sm font-semibold text-ink-950 transition-colors hover:bg-emerald-400 cursor-pointer"
+            >
+              Upload & Record Invoice
+            </button>
+          </form>
+        </div>
       </div>
 
+      {/* Comprehensive Invoices Table with Validation Controls */}
       <div className="overflow-x-auto rounded-xl border border-white/10">
         <table className="w-full text-left text-sm">
           <thead className="border-b border-white/10 text-xs uppercase tracking-widest2 text-fog-500">
@@ -195,51 +309,80 @@ export default async function InvoicesPage() {
               <th className="px-4 py-3">Invoice</th>
               <th className="px-4 py-3">Client</th>
               <th className="px-4 py-3">Arm</th>
-              <th className="px-4 py-3">Service</th>
               <th className="px-4 py-3">Status</th>
-              <th className="px-4 py-3">Total</th>
-              <th className="px-4 py-3">Due</th>
-              <th className="px-4 py-3">Actions</th>
+              <th className="px-4 py-3">Total Amount</th>
+              <th className="px-4 py-3">Due Date</th>
+              <th className="px-4 py-3">Validation & Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-white/5">
             {invoiceList.map((invoice) => {
               const invoiceItems = itemList.filter((item) => item.invoice_id === invoice.id);
               return (
-                <tr key={invoice.id}>
+                <tr key={invoice.id} className="hover:bg-white/[0.02] transition">
                   <td className="px-4 py-3">
-                    <p className="text-fog-100">{invoice.invoice_number}</p>
-                    <p className="text-xs text-fog-500">{invoice.title}</p>
+                    <p className="text-fog-100 font-mono font-medium">{invoice.invoice_number}</p>
+                    <p className="text-xs text-fog-400">{invoice.title}</p>
                     {invoiceItems[0] && (
-                      <p className="mt-1 text-xs text-fog-600">{invoiceItems[0].description}</p>
+                      <p className="mt-0.5 text-[11px] text-fog-500">{invoiceItems[0].description}</p>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-fog-400">{clientName(invoice.client_id, clientList)}</td>
+                  <td className="px-4 py-3 text-fog-300 font-medium">
+                    {clientName(invoice.client_id, clientList)}
+                  </td>
                   <td className="px-4 py-3 text-fog-400">{armName(invoice.business_arm_id, armList)}</td>
-                  <td className="px-4 py-3 text-fog-400">{serviceName(invoice.service_id, serviceList)}</td>
-                  <td className="px-4 py-3 text-fog-400">{labelize(invoice.status)}</td>
-                  <td className="px-4 py-3 text-fog-200">{formatCurrency(invoice.total, invoice.currency)}</td>
-                  <td className="px-4 py-3 text-fog-500">
+                  <td className="px-4 py-3">
+                    <span
+                      className={`inline-block rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
+                        invoice.status === "paid"
+                          ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
+                          : invoice.status === "sent"
+                          ? "bg-sky-500/20 text-sky-400 border border-sky-500/30"
+                          : invoice.status === "overdue"
+                          ? "bg-rose-500/20 text-rose-400 border border-rose-500/30"
+                          : "bg-white/5 text-fog-400 border border-white/10"
+                      }`}
+                    >
+                      {labelize(invoice.status)}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 font-mono font-bold text-white">
+                    {formatCurrency(invoice.total, invoice.currency)}
+                  </td>
+                  <td className="px-4 py-3 text-fog-400 text-xs">
                     {invoice.due_on ? new Date(invoice.due_on).toLocaleDateString() : "On receipt"}
                   </td>
                   <td className="px-4 py-3">
-                    <div className="flex flex-wrap gap-2">
-                      <form action={sendInvoiceEmailAction}>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {/* Status Validation Selector */}
+                      <form action={validateInvoiceAction} className="inline-block">
                         <input type="hidden" name="invoice_id" value={invoice.id} />
-                        <button type="submit" className="rounded-lg border border-white/10 px-3 py-1.5 text-xs text-fog-200 hover:border-gold/40 hover:text-gold">
-                          Send
+                        <input type="hidden" name="client_id" value={invoice.client_id} />
+                        <input type="hidden" name="revenue_record_id" value={invoice.revenue_record_id ?? ""} />
+                        <select
+                          name="status"
+                          defaultValue={invoice.status}
+                          onChange={(e) => e.target.form?.requestSubmit()}
+                          className="text-[11px] bg-black/60 border border-white/15 rounded px-2 py-1 text-fog-200 outline-none focus:border-gold/50 cursor-pointer"
+                        >
+                          <option value="draft">Draft</option>
+                          <option value="sent">Sent / Pending</option>
+                          <option value="paid">✓ Validate & Paid</option>
+                          <option value="overdue">Mark Overdue</option>
+                          <option value="void">Void / Cancel</option>
+                        </select>
+                      </form>
+
+                      {/* Email Send button */}
+                      <form action={sendInvoiceEmailAction} className="inline-block">
+                        <input type="hidden" name="invoice_id" value={invoice.id} />
+                        <button
+                          type="submit"
+                          className="rounded-lg border border-white/10 px-2.5 py-1 text-xs text-fog-300 hover:border-gold/40 hover:text-gold cursor-pointer"
+                        >
+                          Email
                         </button>
                       </form>
-                      {invoice.status !== "paid" && (
-                        <form action={markInvoicePaidAction}>
-                          <input type="hidden" name="invoice_id" value={invoice.id} />
-                          <input type="hidden" name="client_id" value={invoice.client_id} />
-                          <input type="hidden" name="revenue_record_id" value={invoice.revenue_record_id ?? ""} />
-                          <button type="submit" className="rounded-lg border border-gold/40 px-3 py-1.5 text-xs text-gold hover:bg-gold hover:text-ink-950">
-                            Paid
-                          </button>
-                        </form>
-                      )}
                     </div>
                   </td>
                 </tr>
@@ -247,8 +390,8 @@ export default async function InvoicesPage() {
             })}
             {invoiceList.length === 0 && (
               <tr>
-                <td colSpan={8} className="px-4 py-8 text-center text-fog-600">
-                  No invoices yet.
+                <td colSpan={7} className="px-4 py-8 text-center text-fog-600">
+                  No invoices generated or uploaded yet.
                 </td>
               </tr>
             )}
@@ -256,8 +399,9 @@ export default async function InvoicesPage() {
         </table>
       </div>
 
+      {/* Email Log */}
       <div className="rounded-xl border border-white/10 bg-white/[0.02] p-6">
-        <h2 className="font-display text-lg text-fog-100">Mail Log</h2>
+        <h2 className="font-display text-lg text-fog-100">Mail & Delivery Log</h2>
         <ul className="mt-4 divide-y divide-white/5">
           {emailList.map((email) => (
             <li key={email.id} className="py-3">

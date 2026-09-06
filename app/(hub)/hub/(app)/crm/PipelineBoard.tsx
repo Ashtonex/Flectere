@@ -17,10 +17,13 @@ import type {
   Client,
   CrmOpportunity,
   Lead,
+  RevenueRecord,
   Service,
 } from "@/lib/hub/types";
 import {
   createOpportunityAction,
+  updateOpportunityAction,
+  deleteOpportunityAction,
   createActivityAction,
   createRevenueRecordAction,
   updateOpportunityStageAction,
@@ -32,6 +35,7 @@ interface PipelineBoardProps {
   leads: Lead[];
   arms: BusinessArm[];
   services: Service[];
+  revenueRecords: RevenueRecord[];
 }
 
 const STAGE_CONFIG: Record<
@@ -86,13 +90,49 @@ export function PipelineBoard({
   leads,
   arms,
   services,
+  revenueRecords,
 }: PipelineBoardProps) {
   const [modalMode, setModalMode] = useState<"deal" | "activity" | "revenue" | null>(null);
+  const [editingDeal, setEditingDeal] = useState<CrmOpportunity | null>(null);
   const [selectedArmFilter, setSelectedArmFilter] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [updatingId, setUpdatingId] = useState<string | null>(null);
 
+  // Retainer interactive state in Create Deal modal
+  const [isRetained, setIsRetained] = useState(false);
+  const [setupFeeInput, setSetupFeeInput] = useState<string>("");
+  const [monthlyRetainerInput, setMonthlyRetainerInput] = useState<string>("");
+  const [retainerMonthsInput, setRetainerMonthsInput] = useState<string>("12");
+
+  // Edit deal retainer interactive state
+  const [editIsRetained, setEditIsRetained] = useState(false);
+  const [editSetupFee, setEditSetupFee] = useState<string>("");
+  const [editMonthlyRetainer, setEditMonthlyRetainer] = useState<string>("");
+  const [editRetainerMonths, setEditRetainerMonths] = useState<string>("12");
+
   const today = new Date().toISOString().slice(0, 10);
+
+  // Calculate live actual cash extracted/recovered for each deal
+  function getDealRecovery(opportunity: CrmOpportunity) {
+    const linkedRevenue = revenueRecords.filter((r) => r.opportunity_id === opportunity.id);
+    const actualReceived = linkedRevenue
+      .filter((r) => r.status === "received")
+      .reduce((sum, r) => sum + Number(r.amount), 0);
+
+    const clientRevenue = opportunity.client_id
+      ? revenueRecords
+          .filter((r) => r.client_id === opportunity.client_id && r.status === "received")
+          .reduce((sum, r) => sum + Number(r.amount), 0)
+      : 0;
+
+    const totalCashCollected = actualReceived > 0 ? actualReceived : clientRevenue;
+    const extraction = computeContractExtraction(opportunity, totalCashCollected);
+
+    return {
+      totalCashCollected,
+      extraction,
+    };
+  }
 
   const filteredOpportunities = initialOpportunities.filter((opp) => {
     if (selectedArmFilter !== "all" && opp.business_arm_id !== selectedArmFilter) {
@@ -107,6 +147,15 @@ export function PipelineBoard({
     }
     return true;
   });
+
+  function openEditModal(deal: CrmOpportunity) {
+    setEditingDeal(deal);
+    const hasRetainer = Boolean(deal.monthly_recurring && deal.monthly_recurring > 0);
+    setEditIsRetained(hasRetainer);
+    setEditSetupFee(deal.setup_fee ? String(deal.setup_fee) : "");
+    setEditMonthlyRetainer(deal.monthly_recurring ? String(deal.monthly_recurring) : "");
+    setEditRetainerMonths(deal.contract_months ? String(deal.contract_months) : "12");
+  }
 
   return (
     <div className="space-y-6">
@@ -126,7 +175,7 @@ export function PipelineBoard({
           <select
             value={selectedArmFilter}
             onChange={(e) => setSelectedArmFilter(e.target.value)}
-            className="rounded-lg border border-white/10 bg-black/40 px-3 py-1.5 text-xs text-fog-200 outline-none focus:border-gold/50"
+            className="rounded-lg border border-white/10 bg-black/40 px-3 py-1.5 text-xs text-fog-200 outline-none focus:border-gold/50 cursor-pointer"
           >
             <option value="all">All Business Arms ({arms.length})</option>
             {arms.map((arm) => (
@@ -139,7 +188,13 @@ export function PipelineBoard({
 
         <div className="flex items-center gap-2.5">
           <button
-            onClick={() => setModalMode("deal")}
+            onClick={() => {
+              setIsRetained(false);
+              setSetupFeeInput("");
+              setMonthlyRetainerInput("");
+              setRetainerMonthsInput("12");
+              setModalMode("deal");
+            }}
             className="flex items-center gap-1.5 rounded-lg border border-gold/50 bg-gold px-3.5 py-1.5 text-xs font-semibold text-ink-950 transition hover:bg-gold-bright shadow-sm cursor-pointer"
           >
             <span>+</span> New Deal
@@ -159,144 +214,433 @@ export function PipelineBoard({
         </div>
       </div>
 
-      {/* Kanban Pipeline Stage Columns */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-4 items-start">
-        {opportunityStages.map((stage) => {
-          const cfg = STAGE_CONFIG[stage];
-          const stageDeals = filteredOpportunities.filter((o) => o.stage === stage);
-          const stageValue = stageDeals.reduce((sum, o) => sum + Number(o.value ?? 0), 0);
+      {/* Kanban Pipeline Stage Columns - Horizontal Scroll Container with Fixed Height */}
+      <div className="overflow-x-auto pb-4 pt-1">
+        <div className="flex gap-4 min-w-[1500px] items-start">
+          {opportunityStages.map((stage) => {
+            const cfg = STAGE_CONFIG[stage];
+            const stageDeals = filteredOpportunities.filter((o) => o.stage === stage);
+            const stageValue = stageDeals.reduce((sum, o) => {
+              const { extraction } = getDealRecovery(o);
+              return sum + Number(extraction.totalContractValue || o.value || 0);
+            }, 0);
 
-          return (
-            <div
-              key={stage}
-              className="flex flex-col rounded-xl border border-white/10 bg-white/[0.015] p-3 min-h-[460px]"
-            >
-              {/* Stage Header */}
-              <div className="flex items-center justify-between border-b border-white/5 pb-2.5 mb-3">
-                <div>
-                  <h3 className={`text-xs font-bold uppercase tracking-wider ${cfg.tone}`}>
-                    {cfg.label}
-                  </h3>
-                  <p className="text-[10px] font-mono text-fog-500 mt-0.5">
-                    {stageDeals.length} {stageDeals.length === 1 ? "deal" : "deals"} • {formatCurrency(stageValue)}
-                  </p>
+            return (
+              <div
+                key={stage}
+                className="w-72 shrink-0 flex flex-col rounded-xl border border-white/10 bg-white/[0.015] p-3 max-h-[750px]"
+              >
+                {/* Stage Header */}
+                <div className="flex items-center justify-between border-b border-white/5 pb-2.5 mb-3 shrink-0">
+                  <div>
+                    <h3 className={`text-xs font-bold uppercase tracking-wider ${cfg.tone}`}>
+                      {cfg.label}
+                    </h3>
+                    <p className="text-[10px] font-mono text-fog-500 mt-0.5">
+                      {stageDeals.length} {stageDeals.length === 1 ? "deal" : "deals"} • {formatCurrency(stageValue)}
+                    </p>
+                  </div>
+                  <span className="text-[10px] font-mono font-bold rounded-full bg-white/5 px-2 py-0.5 text-fog-400">
+                    {stageDeals.length}
+                  </span>
                 </div>
-                <span className="text-[10px] font-mono font-bold rounded-full bg-white/5 px-2 py-0.5 text-fog-400">
-                  {stageDeals.length}
-                </span>
-              </div>
 
-              {/* Cards Container */}
-              <div className="space-y-3 flex-1 overflow-y-auto max-h-[640px] pr-0.5">
-                {stageDeals.map((deal) => {
-                  const extraction = computeContractExtraction(deal);
-                  const isUpdating = updatingId === deal.id;
+                {/* Cards Container: Independently Scrollable */}
+                <div className="space-y-3 flex-1 overflow-y-auto pr-1">
+                  {stageDeals.map((deal) => {
+                    const { totalCashCollected, extraction } = getDealRecovery(deal);
+                    const isUpdating = updatingId === deal.id;
 
-                  return (
-                    <div
-                      key={deal.id}
-                      className={`group rounded-lg border border-white/10 bg-ink-950/70 p-3.5 space-y-2.5 transition hover:border-gold/40 hover:bg-ink-950 ${
-                        isUpdating ? "opacity-50 pointer-events-none" : ""
-                      }`}
-                    >
-                      {/* Arm & Probability */}
-                      <div className="flex items-start justify-between gap-1.5">
-                        <span className="rounded bg-gold/10 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-gold truncate max-w-[140px]">
-                          {armName(deal.business_arm_id, arms)}
-                        </span>
-                        <span className="shrink-0 text-[10px] font-mono font-bold text-fog-400">
-                          {deal.probability}%
-                        </span>
-                      </div>
-
-                      {/* Title & Client */}
-                      <div>
-                        <h4 className="text-xs font-bold text-fog-100 group-hover:text-white leading-snug">
-                          {deal.title}
-                        </h4>
-                        <p className="text-[11px] text-fog-400 mt-0.5 truncate">
-                          {deal.client_id
-                            ? clientName(deal.client_id, clients)
-                            : deal.lead_id
-                            ? `Lead: ${leadName(deal.lead_id, leads)}`
-                            : "Unassigned entity"}
-                        </p>
-                      </div>
-
-                      {/* Value & Terms */}
-                      <div className="pt-2 border-t border-white/5 flex items-baseline justify-between text-xs">
-                        <div>
-                          <span className="text-[10px] uppercase text-fog-500 block">Deal Value</span>
-                          <span className="font-mono font-bold text-white">
-                            {formatCurrency(extraction.totalContractValue, deal.currency)}
+                    return (
+                      <div
+                        key={deal.id}
+                        className={`group rounded-lg border border-white/10 bg-ink-950/70 p-3.5 space-y-2.5 transition hover:border-gold/50 hover:bg-ink-950 shadow-sm ${
+                          isUpdating ? "opacity-50 pointer-events-none" : ""
+                        }`}
+                      >
+                        {/* Header: Arm & Probability */}
+                        <div className="flex items-start justify-between gap-1.5">
+                          <span className="rounded bg-gold/10 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-gold truncate max-w-[140px]">
+                            {armName(deal.business_arm_id, arms)}
+                          </span>
+                          <span className="shrink-0 text-[10px] font-mono font-bold text-fog-400">
+                            {deal.probability}%
                           </span>
                         </div>
-                        {deal.stage === "won" && (
-                          <div className="text-right">
-                            <span className="text-[9px] uppercase text-fog-500 block">Extracted</span>
-                            <span className="text-[10px] font-mono text-emerald-400 font-bold">
-                              {extraction.extractionPercent}%
+
+                        {/* Title & Client Link */}
+                        <div>
+                          <button
+                            type="button"
+                            onClick={() => openEditModal(deal)}
+                            className="text-left font-bold text-xs text-fog-100 hover:text-gold transition leading-snug cursor-pointer group-hover:underline"
+                          >
+                            {deal.title}
+                          </button>
+                          <p className="text-[11px] text-fog-400 mt-0.5 truncate">
+                            {deal.client_id
+                              ? clientName(deal.client_id, clients)
+                              : deal.lead_id
+                              ? `Lead: ${leadName(deal.lead_id, leads)}`
+                              : "Unassigned entity"}
+                          </p>
+                        </div>
+
+                        {/* Retainer Badge if Applicable */}
+                        {deal.monthly_recurring && deal.monthly_recurring > 0 && (
+                          <div className="rounded bg-white/[0.03] border border-white/5 px-2 py-1 flex items-center justify-between text-[10px] font-mono">
+                            <span className="text-gold font-semibold">
+                              {formatCurrency(deal.monthly_recurring)}/mo
+                            </span>
+                            <span className="text-fog-500">
+                              {deal.contract_months ?? 12} mo retainer
                             </span>
                           </div>
                         )}
-                      </div>
 
-                      {/* Expected Close Date */}
-                      {deal.expected_close_on && (
-                        <p className="text-[10px] text-fog-500 font-mono">
-                          Target close: {new Date(deal.expected_close_on).toLocaleDateString()}
-                        </p>
-                      )}
+                        {/* Contract Value & Actual Recovery Percentage */}
+                        <div className="pt-2 border-t border-white/5 space-y-1.5">
+                          <div className="flex items-baseline justify-between text-xs">
+                            <div>
+                              <span className="text-[9px] uppercase text-fog-500 block">Total Value</span>
+                              <span className="font-mono font-bold text-white">
+                                {formatCurrency(extraction.totalContractValue, deal.currency)}
+                              </span>
+                            </div>
+                            <div className="text-right">
+                              <span className="text-[9px] uppercase text-fog-500 block">Recovered</span>
+                              <span
+                                className={`text-[10px] font-mono font-bold ${
+                                  extraction.extractionPercent > 0
+                                    ? "text-emerald-400"
+                                    : "text-fog-400"
+                                }`}
+                              >
+                                {extraction.extractionPercent}% ({formatCurrency(totalCashCollected)})
+                              </span>
+                            </div>
+                          </div>
 
-                      {/* Stage Advancement Switcher */}
-                      <div className="pt-2 border-t border-white/5 flex items-center justify-between">
-                        <span className="text-[9px] uppercase text-fog-500">Stage:</span>
-                        <form
-                          action={async (formData) => {
-                            setUpdatingId(deal.id);
-                            await updateOpportunityStageAction(formData);
-                            setUpdatingId(null);
-                          }}
-                        >
-                          <input type="hidden" name="id" value={deal.id} />
-                          <select
-                            name="stage"
-                            defaultValue={deal.stage}
-                            onChange={(e) => e.target.form?.requestSubmit()}
-                            className="text-[10px] bg-black/60 border border-white/10 rounded px-1.5 py-0.5 text-fog-200 outline-none focus:border-gold/50 cursor-pointer"
+                          {/* Progress bar visual for cash recovered */}
+                          <div className="h-1.5 w-full bg-white/10 rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-gradient-to-r from-gold to-emerald-400 rounded-full transition-all duration-300"
+                              style={{ width: `${Math.min(100, extraction.extractionPercent)}%` }}
+                            />
+                          </div>
+                        </div>
+
+                        {/* Expected Close Date */}
+                        {deal.expected_close_on && (
+                          <p className="text-[10px] text-fog-500 font-mono">
+                            Target close: {new Date(deal.expected_close_on).toLocaleDateString()}
+                          </p>
+                        )}
+
+                        {/* Stage Switcher & Quick Edit Action */}
+                        <div className="pt-2 border-t border-white/5 flex items-center justify-between gap-2">
+                          <button
+                            type="button"
+                            onClick={() => openEditModal(deal)}
+                            className="text-[10px] text-gold hover:underline cursor-pointer"
                           >
-                            {opportunityStages.map((st) => (
-                              <option key={st} value={st}>
-                                {labelize(st)}
-                              </option>
-                            ))}
-                          </select>
-                        </form>
-                      </div>
-                    </div>
-                  );
-                })}
+                            Edit / Expand ➔
+                          </button>
 
-                {stageDeals.length === 0 && (
-                  <div className="h-32 flex items-center justify-center rounded-lg border border-dashed border-white/5 text-[11px] text-fog-600">
-                    No deals in {cfg.label.toLowerCase()}
+                          <form
+                            action={async (formData) => {
+                              setUpdatingId(deal.id);
+                              await updateOpportunityStageAction(formData);
+                              setUpdatingId(null);
+                            }}
+                          >
+                            <input type="hidden" name="id" value={deal.id} />
+                            <select
+                              name="stage"
+                              defaultValue={deal.stage}
+                              onChange={(e) => e.target.form?.requestSubmit()}
+                              className="text-[10px] bg-black/60 border border-white/10 rounded px-1.5 py-0.5 text-fog-200 outline-none focus:border-gold/50 cursor-pointer"
+                            >
+                              {opportunityStages.map((st) => (
+                                <option key={st} value={st}>
+                                  {labelize(st)}
+                                </option>
+                              ))}
+                            </select>
+                          </form>
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  {stageDeals.length === 0 && (
+                    <div className="h-32 flex items-center justify-center rounded-lg border border-dashed border-white/5 text-[11px] text-fog-600">
+                      No deals in {cfg.label.toLowerCase()}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Modal Dialog for Edit Deal / Corrections */}
+      {editingDeal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div className="w-full max-w-xl rounded-2xl border border-white/15 bg-ink-950 p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-150 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-white/10 pb-3 mb-4">
+              <div>
+                <h3 className="font-display text-lg text-fog-100">Edit Pipeline Deal</h3>
+                <p className="text-xs text-fog-500">Update deal financials, retainer structure, or contract details</p>
+              </div>
+              <button
+                onClick={() => setEditingDeal(null)}
+                className="text-fog-400 hover:text-white text-lg font-mono cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form
+              action={async (formData) => {
+                await updateOpportunityAction(formData);
+                setEditingDeal(null);
+              }}
+              className="space-y-4"
+            >
+              <input type="hidden" name="id" value={editingDeal.id} />
+
+              <div>
+                <label className={labelClasses}>Deal Title *</label>
+                <input
+                  name="title"
+                  required
+                  defaultValue={editingDeal.title}
+                  className={inputClasses}
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className={labelClasses}>Client</label>
+                  <select name="client_id" defaultValue={editingDeal.client_id ?? ""} className={inputClasses}>
+                    <option value="">Unassigned</option>
+                    {clients.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className={labelClasses}>Business Arm</label>
+                  <select name="business_arm_id" defaultValue={editingDeal.business_arm_id ?? ""} className={inputClasses}>
+                    <option value="">No arm selected</option>
+                    {arms.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className={labelClasses}>Service Offering</label>
+                  <select name="service_id" defaultValue={editingDeal.service_id ?? ""} className={inputClasses}>
+                    <option value="">No specific service</option>
+                    {services.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className={labelClasses}>Pipeline Stage</label>
+                  <select name="stage" defaultValue={editingDeal.stage} className={inputClasses}>
+                    {opportunityStages.map((st) => (
+                      <option key={st} value={st}>
+                        {labelize(st)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Retainer Checkbox Switch */}
+              <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label className="text-xs font-bold text-fog-100 flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={editIsRetained}
+                        onChange={(e) => setEditIsRetained(e.target.checked)}
+                        className="rounded border-white/20 text-gold focus:ring-gold"
+                      />
+                      Is this client on a monthly retainer?
+                    </label>
+                    <p className="text-[11px] text-fog-500 mt-0.5">
+                      Flectēre will track recurring MRR, contract length, and expected vs recovered cash.
+                    </p>
+                  </div>
+                  {editIsRetained && (
+                    <span className="text-[10px] bg-gold/20 text-gold font-mono font-bold px-2 py-0.5 rounded">
+                      RETAINER MODEL
+                    </span>
+                  )}
+                </div>
+
+                {editIsRetained && (
+                  <div className="grid grid-cols-3 gap-3 pt-2 border-t border-white/5">
+                    <div>
+                      <label className={labelClasses}>Setup / Onboarding ($)</label>
+                      <input
+                        name="setup_fee"
+                        type="number"
+                        step="0.01"
+                        value={editSetupFee}
+                        onChange={(e) => setEditSetupFee(e.target.value)}
+                        placeholder="e.g. 5000"
+                        className={inputClasses}
+                      />
+                    </div>
+                    <div>
+                      <label className={labelClasses}>Monthly Retainer ($) *</label>
+                      <input
+                        name="monthly_recurring"
+                        type="number"
+                        step="0.01"
+                        required={editIsRetained}
+                        value={editMonthlyRetainer}
+                        onChange={(e) => setEditMonthlyRetainer(e.target.value)}
+                        placeholder="e.g. 1500"
+                        className={inputClasses}
+                      />
+                    </div>
+                    <div>
+                      <label className={labelClasses}>Duration (Months)</label>
+                      <input
+                        name="contract_months"
+                        type="number"
+                        min="1"
+                        value={editRetainerMonths}
+                        onChange={(e) => setEditRetainerMonths(e.target.value)}
+                        className={inputClasses}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {editIsRetained && (
+                  <div className="rounded-lg bg-black/40 p-2.5 text-xs text-fog-300 flex justify-between font-mono">
+                    <span>Computed Total Contract Value (TCV):</span>
+                    <span className="text-gold font-bold">
+                      {formatCurrency(
+                        Number(editSetupFee || 0) +
+                          Number(editMonthlyRetainer || 0) * Number(editRetainerMonths || 12)
+                      )}
+                    </span>
                   </div>
                 )}
               </div>
-            </div>
-          );
-        })}
-      </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className={labelClasses}>Flat / Total Deal Value ($)</label>
+                  <input
+                    name="value"
+                    type="number"
+                    step="0.01"
+                    defaultValue={editingDeal.value ?? ""}
+                    className={inputClasses}
+                    placeholder="e.g. 18000"
+                  />
+                </div>
+                <div>
+                  <label className={labelClasses}>Win Prob. (%)</label>
+                  <input
+                    name="probability"
+                    type="number"
+                    min="0"
+                    max="100"
+                    defaultValue={editingDeal.probability}
+                    className={inputClasses}
+                  />
+                </div>
+                <div>
+                  <label className={labelClasses}>Target Close</label>
+                  <input
+                    name="expected_close_on"
+                    type="date"
+                    defaultValue={editingDeal.expected_close_on ?? ""}
+                    className={inputClasses}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className={labelClasses}>Notes & Objections</label>
+                <textarea
+                  name="notes"
+                  rows={2}
+                  defaultValue={editingDeal.notes ?? ""}
+                  className={inputClasses}
+                />
+              </div>
+
+              <div className="pt-3 flex justify-between items-center border-t border-white/10">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (confirm("Are you sure you want to delete this deal?")) {
+                      const formData = new FormData();
+                      formData.append("id", editingDeal.id);
+                      await deleteOpportunityAction(formData);
+                      setEditingDeal(null);
+                    }
+                  }}
+                  className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3.5 py-2 text-xs font-semibold text-rose-400 hover:bg-rose-500/20 cursor-pointer"
+                >
+                  Delete Deal
+                </button>
+
+                <div className="flex gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setEditingDeal(null)}
+                    className="rounded-lg border border-white/10 px-4 py-2 text-xs text-fog-300 hover:bg-white/5 cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="rounded-lg border border-gold/50 bg-gold px-5 py-2 text-xs font-bold text-ink-950 hover:bg-gold-bright transition cursor-pointer"
+                  >
+                    Save Changes
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Modal Dialog for New Deal */}
       {modalMode === "deal" && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-          <div className="w-full max-w-lg rounded-2xl border border-white/10 bg-ink-950 p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-150">
+          <div className="w-full max-w-xl rounded-2xl border border-white/15 bg-ink-950 p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-150 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-white/10 pb-3 mb-4">
-              <h3 className="font-display text-lg text-fog-100">Create Pipeline Deal</h3>
+              <div>
+                <h3 className="font-display text-lg text-fog-100">Create Pipeline Deal</h3>
+                <p className="text-xs text-fog-500">Configure new opportunity, setup fees, and retainer models</p>
+              </div>
               <button
                 onClick={() => setModalMode(null)}
-                className="text-fog-400 hover:text-white text-lg font-mono"
+                className="text-fog-400 hover:text-white text-lg font-mono cursor-pointer"
               >
                 ✕
               </button>
@@ -369,6 +713,84 @@ export function PipelineBoard({
                 </div>
               </div>
 
+              {/* Retainer Selector */}
+              <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label className="text-xs font-bold text-fog-100 flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={isRetained}
+                        onChange={(e) => setIsRetained(e.target.checked)}
+                        className="rounded border-white/20 text-gold focus:ring-gold"
+                      />
+                      Is this client on a monthly retainer?
+                    </label>
+                    <p className="text-[11px] text-fog-500 mt-0.5">
+                      Automatically records monthly recurring billing & contract value.
+                    </p>
+                  </div>
+                  {isRetained && (
+                    <span className="text-[10px] bg-gold/20 text-gold font-mono font-bold px-2 py-0.5 rounded">
+                      RETAINER ON
+                    </span>
+                  )}
+                </div>
+
+                {isRetained && (
+                  <div className="grid grid-cols-3 gap-3 pt-2 border-t border-white/5">
+                    <div>
+                      <label className={labelClasses}>Setup Fee ($)</label>
+                      <input
+                        name="setup_fee"
+                        type="number"
+                        step="0.01"
+                        value={setupFeeInput}
+                        onChange={(e) => setSetupFeeInput(e.target.value)}
+                        placeholder="e.g. 5000"
+                        className={inputClasses}
+                      />
+                    </div>
+                    <div>
+                      <label className={labelClasses}>Monthly Retainer ($) *</label>
+                      <input
+                        name="monthly_recurring"
+                        type="number"
+                        step="0.01"
+                        required={isRetained}
+                        value={monthlyRetainerInput}
+                        onChange={(e) => setMonthlyRetainerInput(e.target.value)}
+                        placeholder="e.g. 1500"
+                        className={inputClasses}
+                      />
+                    </div>
+                    <div>
+                      <label className={labelClasses}>Duration (Months)</label>
+                      <input
+                        name="contract_months"
+                        type="number"
+                        min="1"
+                        value={retainerMonthsInput}
+                        onChange={(e) => setRetainerMonthsInput(e.target.value)}
+                        className={inputClasses}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {isRetained && (
+                  <div className="rounded-lg bg-black/40 p-2.5 text-xs text-fog-300 flex justify-between font-mono">
+                    <span>Expected Total Contract Value (TCV):</span>
+                    <span className="text-gold font-bold">
+                      {formatCurrency(
+                        Number(setupFeeInput || 0) +
+                          Number(monthlyRetainerInput || 0) * Number(retainerMonthsInput || 12)
+                      )}
+                    </span>
+                  </div>
+                )}
+              </div>
+
               <div className="grid grid-cols-3 gap-3">
                 <div>
                   <label className={labelClasses}>Stage</label>
@@ -381,7 +803,7 @@ export function PipelineBoard({
                   </select>
                 </div>
                 <div>
-                  <label className={labelClasses}>Deal Value ($)</label>
+                  <label className={labelClasses}>Deal / Base Value ($)</label>
                   <input
                     name="value"
                     type="number"
@@ -422,13 +844,13 @@ export function PipelineBoard({
                 <button
                   type="button"
                   onClick={() => setModalMode(null)}
-                  className="rounded-lg border border-white/10 px-4 py-2 text-xs text-fog-300 hover:bg-white/5"
+                  className="rounded-lg border border-white/10 px-4 py-2 text-xs text-fog-300 hover:bg-white/5 cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="rounded-lg border border-gold/50 bg-gold px-5 py-2 text-xs font-bold text-ink-950 hover:bg-gold-bright transition"
+                  className="rounded-lg border border-gold/50 bg-gold px-5 py-2 text-xs font-bold text-ink-950 hover:bg-gold-bright transition cursor-pointer"
                 >
                   Create Deal
                 </button>
@@ -446,7 +868,7 @@ export function PipelineBoard({
               <h3 className="font-display text-lg text-fog-100">Log CRM Activity</h3>
               <button
                 onClick={() => setModalMode(null)}
-                className="text-fog-400 hover:text-white text-lg font-mono"
+                className="text-fog-400 hover:text-white text-lg font-mono cursor-pointer"
               >
                 ✕
               </button>
@@ -552,13 +974,13 @@ export function PipelineBoard({
                 <button
                   type="button"
                   onClick={() => setModalMode(null)}
-                  className="rounded-lg border border-white/10 px-4 py-2 text-xs text-fog-300 hover:bg-white/5"
+                  className="rounded-lg border border-white/10 px-4 py-2 text-xs text-fog-300 hover:bg-white/5 cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="rounded-lg border border-gold/50 bg-gold px-5 py-2 text-xs font-bold text-ink-950 hover:bg-gold-bright transition"
+                  className="rounded-lg border border-gold/50 bg-gold px-5 py-2 text-xs font-bold text-ink-950 hover:bg-gold-bright transition cursor-pointer"
                 >
                   Log Activity
                 </button>
@@ -576,7 +998,7 @@ export function PipelineBoard({
               <h3 className="font-display text-lg text-fog-100">Record Direct Revenue</h3>
               <button
                 onClick={() => setModalMode(null)}
-                className="text-fog-400 hover:text-white text-lg font-mono"
+                className="text-fog-400 hover:text-white text-lg font-mono cursor-pointer"
               >
                 ✕
               </button>
@@ -662,12 +1084,12 @@ export function PipelineBoard({
               </div>
 
               <div>
-                <label className={labelClasses}>Opportunity / Deal (Optional)</label>
+                <label className={labelClasses}>Link to Deal (Calculates Cash Recovery %)</label>
                 <select name="opportunity_id" className={inputClasses}>
                   <option value="">No deal linked</option>
                   {initialOpportunities.map((o) => (
                     <option key={o.id} value={o.id}>
-                      {o.title}
+                      {o.title} ({formatCurrency(Number(o.value ?? 0))})
                     </option>
                   ))}
                 </select>
@@ -687,13 +1109,13 @@ export function PipelineBoard({
                 <button
                   type="button"
                   onClick={() => setModalMode(null)}
-                  className="rounded-lg border border-white/10 px-4 py-2 text-xs text-fog-300 hover:bg-white/5"
+                  className="rounded-lg border border-white/10 px-4 py-2 text-xs text-fog-300 hover:bg-white/5 cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="rounded-lg border border-emerald-500/50 bg-emerald-500 px-5 py-2 text-xs font-bold text-ink-950 hover:bg-emerald-400 transition"
+                  className="rounded-lg border border-emerald-500/50 bg-emerald-500 px-5 py-2 text-xs font-bold text-ink-950 hover:bg-emerald-400 transition cursor-pointer"
                 >
                   Record Revenue
                 </button>

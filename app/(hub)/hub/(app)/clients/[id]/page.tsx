@@ -24,10 +24,9 @@ import type {
 import {
   addWithdrawalAction,
   createClientPortalLoginAction,
-  deleteDocumentAction,
   updateClientAction,
-  uploadDocumentAction,
 } from "../actions";
+import { ClientDocumentsGrouped } from "./ClientDocumentsGrouped";
 
 const inputClasses =
   "w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-fog-100 outline-none transition-colors focus:border-gold/50";
@@ -39,15 +38,19 @@ export default async function ClientDetailPage({
   params,
   searchParams,
 }: {
-  params: { id: string };
-  searchParams?: { portal?: string };
+  params: Promise<{ id: string }> | { id: string };
+  searchParams?: Promise<{ portal?: string }> | { portal?: string };
 }) {
+  const resolvedParams = await Promise.resolve(params);
+  const resolvedSearchParams = await Promise.resolve(searchParams);
+  const clientId = resolvedParams.id;
+
   const supabase = await createClient();
 
   const { data: client } = await supabase
     .from("clients")
     .select("*")
-    .eq("id", params.id)
+    .eq("id", clientId)
     .maybeSingle();
 
   if (!client) notFound();
@@ -55,7 +58,7 @@ export default async function ClientDetailPage({
   const { data: accounts } = await supabase
     .from("trading_accounts")
     .select("*")
-    .eq("client_id", params.id);
+    .eq("client_id", clientId);
   const accountList = (accounts ?? []) as TradingAccount[];
   const accountIds = accountList.map((a) => a.id);
 
@@ -79,12 +82,12 @@ export default async function ClientDetailPage({
     accountIds.length > 0
       ? supabase.from("withdrawals").select("*").in("account_id", accountIds)
       : Promise.resolve({ data: [] }),
-    supabase.from("documents").select("*").eq("client_id", params.id).order("uploaded_at", { ascending: false }),
+    supabase.from("documents").select("*").eq("client_id", clientId).order("uploaded_at", { ascending: false }),
     supabase.from("business_arms").select("*").order("name"),
     supabase.from("services").select("*").order("name"),
-    supabase.from("crm_opportunities").select("*").eq("client_id", params.id).order("updated_at", { ascending: false }),
-    supabase.from("crm_activities").select("*").eq("client_id", params.id).order("activity_date", { ascending: false }),
-    supabase.from("revenue_records").select("*").eq("client_id", params.id).order("recorded_on", { ascending: false }),
+    supabase.from("crm_opportunities").select("*").eq("client_id", clientId).order("updated_at", { ascending: false }),
+    supabase.from("crm_activities").select("*").eq("client_id", clientId).order("activity_date", { ascending: false }),
+    supabase.from("revenue_records").select("*").eq("client_id", clientId).order("recorded_on", { ascending: false }),
   ]);
 
   const entryList = (entries ?? []) as PerformanceEntry[];
@@ -109,7 +112,7 @@ export default async function ClientDetailPage({
   const serviceRevenue = sumRevenue(revenueList, ["received"]);
   const bookedRevenue = sumRevenue(revenueList, ["received", "invoiced"]);
   const pipelineValue = weightedPipeline(opportunityList);
-  const portalStatus = searchParams?.portal;
+  const portalStatus = resolvedSearchParams?.portal;
   const portalMessage =
     portalStatus === "login-ready"
       ? "Client portal login is ready. Share the temporary password securely."
@@ -443,79 +446,11 @@ export default async function ClientDetailPage({
         </table>
       </div>
 
-      <div className="rounded-xl border border-white/10 bg-white/[0.02] p-6">
-        <h2 className="font-display text-lg text-fog-100">Documents</h2>
-        <ul className="mt-4 divide-y divide-white/5">
-          {documentsWithUrls.map((doc) => (
-            <li key={doc.id} className="flex items-center justify-between gap-4 py-3">
-              <div>
-                {doc.url ? (
-                  <a
-                    href={doc.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-sm text-fog-100 underline decoration-white/20 underline-offset-4 hover:text-gold"
-                  >
-                    {doc.label}
-                  </a>
-                ) : (
-                  <span className="text-sm text-fog-400">{doc.label}</span>
-                )}
-                <p className="text-xs text-fog-600">
-                  {labelize(doc.document_type)} · {new Date(doc.uploaded_at).toLocaleDateString()}
-                </p>
-                {doc.notes && <p className="mt-1 text-xs text-fog-500">{doc.notes}</p>}
-              </div>
-              <form action={deleteDocumentAction}>
-                <input type="hidden" name="id" value={doc.id} />
-                <input type="hidden" name="storage_path" value={doc.storage_path} />
-                <input type="hidden" name="client_id" value={(client as Client).id} />
-                <button type="submit" className="text-xs text-fog-500 hover:text-red-400">
-                  Remove
-                </button>
-              </form>
-            </li>
-          ))}
-          {documentsWithUrls.length === 0 && (
-            <li className="py-3 text-sm text-fog-600">No documents uploaded yet.</li>
-          )}
-        </ul>
-
-        <form action={uploadDocumentAction} className="mt-6 flex flex-wrap items-end gap-4 border-t border-white/10 pt-6">
-          <input type="hidden" name="client_id" value={(client as Client).id} />
-          <div className="flex-1">
-            <label className={labelClasses}>Label</label>
-            <input name="label" required className={inputClasses} placeholder="e.g. Signed agreement" />
-          </div>
-          <div className="w-44">
-            <label className={labelClasses}>Type</label>
-            <select name="document_type" className={inputClasses}>
-              {documentTypes.map((type) => (
-                <option key={type} value={type}>
-                  {labelize(type)}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="flex-1">
-            <label className={labelClasses}>File</label>
-            <input
-              name="file"
-              type="file"
-              required
-              accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx"
-              className="block w-full text-sm text-fog-300 file:mr-3 file:rounded-lg file:border file:border-white/10 file:bg-white/[0.03] file:px-3 file:py-1.5 file:text-sm file:text-fog-200"
-            />
-          </div>
-          <div className="basis-full">
-            <label className={labelClasses}>Notes</label>
-            <input name="notes" className={inputClasses} placeholder="Optional context for this document" />
-          </div>
-          <button type="submit" className={submitClasses}>
-            Upload
-          </button>
-        </form>
-      </div>
+      {/* Categorized Document Vault */}
+      <ClientDocumentsGrouped
+        client={client as Client}
+        documents={documentsWithUrls}
+      />
     </div>
   );
 }
