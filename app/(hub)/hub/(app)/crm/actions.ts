@@ -125,3 +125,14 @@ export async function createRevenueRecordAction(formData: FormData) {
 
   revalidateCrm();
 }
+
+export async function updateOpportunityStageAction(formData: FormData) {
+  const supabase = await createClient();
+
+  const id = String(formData.get("id") || "");
+  const stage = String(formData.get("stage") || "");
+  if (!id || !stage) return;
+
+  await supabase.from("crm_opportunities").update({ stage }).eq("id", id);
+  revalidateCrm();
+}

@@ -2,15 +2,12 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { formatCurrency } from "@/lib/hub/analytics";
 import {
-  activityTypes,
   armName,
   calculateLeadValuation,
   clientName,
   computeContractExtraction,
   labelize,
   leadName,
-  opportunityStages,
-  revenueStatuses,
   serviceName,
   sumRevenue,
   weightedPipeline,
@@ -24,17 +21,7 @@ import type {
   RevenueRecord,
   Service,
 } from "@/lib/hub/types";
-import {
-  createActivityAction,
-  createOpportunityAction,
-  createRevenueRecordAction,
-} from "./actions";
-
-const inputClasses =
-  "w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-fog-100 outline-none transition-colors focus:border-gold/50";
-const labelClasses = "mb-1.5 block text-xs uppercase tracking-widest2 text-fog-500";
-const submitClasses =
-  "mt-2 rounded-lg border border-gold/50 bg-ink-900 px-4 py-2 text-sm font-medium text-gold transition-colors hover:border-gold hover:bg-gold hover:text-ink-950";
+import { PipelineBoard } from "./PipelineBoard";
 
 export default async function CrmPage() {
   const supabase = await createClient();
@@ -64,7 +51,6 @@ export default async function CrmPage() {
   const opportunityList = (opportunities ?? []) as CrmOpportunity[];
   const activityList = (activities ?? []) as CrmActivity[];
   const revenueList = (revenue ?? []) as RevenueRecord[];
-  const today = new Date().toISOString().slice(0, 10);
 
   const openOpportunities = opportunityList.filter((item) => !["won", "lost"].includes(item.stage));
   const receivedRevenue = sumRevenue(revenueList, ["received"]);
@@ -72,291 +58,70 @@ export default async function CrmPage() {
   const weighted = weightedPipeline(opportunityList);
 
   return (
-    <div className="space-y-10">
+    <div className="space-y-8">
+      {/* Page Header */}
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="font-display text-2xl text-fog-100">CRM</h1>
+          <h1 className="font-display text-2xl md:text-3xl text-fog-100 tracking-tight">
+            Pipeline & CRM Command
+          </h1>
           <p className="mt-1 text-sm text-fog-500">
-            Record Flectere activity, pipeline, and revenue across every business arm.
+            Real-time pipeline staging, client engagements, and direct revenue ledger across all business arms.
           </p>
         </div>
-        <Link
-          href="/hub/clients"
-          className="rounded-lg border border-white/10 px-4 py-2 text-sm text-fog-200 transition-colors hover:border-gold/40 hover:text-gold"
-        >
-          View Clients
-        </Link>
+        <div className="flex items-center gap-3">
+          <Link
+            href="/hub/leads"
+            className="rounded-lg border border-white/10 px-4 py-2 text-sm text-fog-200 transition-colors hover:border-gold/40 hover:text-gold"
+          >
+            Manage Leads ({leadList.length})
+          </Link>
+          <Link
+            href="/hub/clients"
+            className="rounded-lg border border-white/10 px-4 py-2 text-sm text-fog-200 transition-colors hover:border-gold/40 hover:text-gold"
+          >
+            Manage Clients ({clientList.length})
+          </Link>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      {/* KPI Metrics */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
         <div className="rounded-xl border border-gold/25 bg-gold/5 p-5">
           <p className="text-xs uppercase tracking-widest2 text-gold">Revenue Received</p>
           <p className="mt-2 font-display text-2xl text-fog-100">{formatCurrency(receivedRevenue)}</p>
+          <p className="text-[10px] text-fog-500 mt-1 font-mono">Actual collected cash</p>
         </div>
         <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
           <p className="text-xs uppercase tracking-widest2 text-fog-500">Booked Revenue</p>
           <p className="mt-2 font-display text-2xl text-fog-100">{formatCurrency(bookedRevenue)}</p>
+          <p className="text-[10px] text-fog-500 mt-1 font-mono">Received + Invoiced</p>
         </div>
         <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
           <p className="text-xs uppercase tracking-widest2 text-fog-500">Weighted Pipeline</p>
           <p className="mt-2 font-display text-2xl text-fog-100">{formatCurrency(weighted)}</p>
+          <p className="text-[10px] text-fog-500 mt-1 font-mono">Adjusted for win probability</p>
+        </div>
+        <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
+          <p className="text-xs uppercase tracking-widest2 text-fog-500">Active Pipeline Deals</p>
+          <p className="mt-2 font-display text-2xl text-fog-100">{openOpportunities.length}</p>
+          <p className="text-[10px] text-fog-500 mt-1 font-mono">{opportunityList.length} total opportunities</p>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-8 xl:grid-cols-3">
-        <div className="rounded-xl border border-white/10 bg-white/[0.02] p-6">
-          <h2 className="font-display text-lg text-fog-100">Add Opportunity</h2>
-          <form action={createOpportunityAction} className="mt-4 space-y-4">
-            <div>
-              <label className={labelClasses}>Title</label>
-              <input name="title" required className={inputClasses} placeholder="e.g. Systems audit retainer" />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className={labelClasses}>Client</label>
-                <select name="client_id" className={inputClasses}>
-                  <option value="">Unassigned</option>
-                  {clientList.map((client) => (
-                    <option key={client.id} value={client.id}>
-                      {client.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className={labelClasses}>Lead</label>
-                <select name="lead_id" className={inputClasses}>
-                  <option value="">No lead</option>
-                  {leadList.map((lead) => (
-                    <option key={lead.id} value={lead.id}>
-                      {lead.name} {lead.company ? `- ${lead.company}` : ""}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className={labelClasses}>Business Arm</label>
-                <select name="business_arm_id" className={inputClasses}>
-                  <option value="">No arm</option>
-                  {armList.map((arm) => (
-                    <option key={arm.id} value={arm.id}>
-                      {arm.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className={labelClasses}>Service</label>
-                <select name="service_id" className={inputClasses}>
-                  <option value="">No service</option>
-                  {serviceList.map((service) => (
-                    <option key={service.id} value={service.id}>
-                      {service.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-            <div className="grid grid-cols-3 gap-4">
-              <div>
-                <label className={labelClasses}>Stage</label>
-                <select name="stage" className={inputClasses}>
-                  {opportunityStages.map((stage) => (
-                    <option key={stage} value={stage}>
-                      {labelize(stage)}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className={labelClasses}>Value</label>
-                <input name="value" type="number" step="0.01" className={inputClasses} />
-              </div>
-              <div>
-                <label className={labelClasses}>Probability</label>
-                <input name="probability" type="number" min="0" max="100" defaultValue="25" className={inputClasses} />
-              </div>
-            </div>
-            <div>
-              <label className={labelClasses}>Expected Close</label>
-              <input name="expected_close_on" type="date" className={inputClasses} />
-            </div>
-            <div>
-              <label className={labelClasses}>Notes</label>
-              <textarea name="notes" rows={3} className={inputClasses} />
-            </div>
-            <button type="submit" className={submitClasses}>
-              Add Opportunity
-            </button>
-          </form>
+      {/* Visual Kanban Pipeline Board */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm uppercase tracking-wider text-fog-400 font-bold">Deal Pipeline Stages</h2>
+          <span className="text-xs text-fog-500">Move deals between stages or add new opportunities</span>
         </div>
-
-        <div className="rounded-xl border border-white/10 bg-white/[0.02] p-6">
-          <h2 className="font-display text-lg text-fog-100">Record Activity</h2>
-          <form action={createActivityAction} className="mt-4 space-y-4">
-            <div>
-              <label className={labelClasses}>Subject</label>
-              <input name="subject" required className={inputClasses} placeholder="e.g. Discovery call completed" />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className={labelClasses}>Type</label>
-                <select name="activity_type" className={inputClasses}>
-                  {activityTypes.map((type) => (
-                    <option key={type} value={type}>
-                      {labelize(type)}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className={labelClasses}>Date</label>
-                <input name="activity_date" type="date" required defaultValue={today} className={inputClasses} />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className={labelClasses}>Client</label>
-                <select name="client_id" className={inputClasses}>
-                  <option value="">Unassigned</option>
-                  {clientList.map((client) => (
-                    <option key={client.id} value={client.id}>
-                      {client.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className={labelClasses}>Opportunity</label>
-                <select name="opportunity_id" className={inputClasses}>
-                  <option value="">No opportunity</option>
-                  {opportunityList.map((opportunity) => (
-                    <option key={opportunity.id} value={opportunity.id}>
-                      {opportunity.title}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-            <div>
-              <label className={labelClasses}>Business Arm</label>
-              <select name="business_arm_id" className={inputClasses}>
-                <option value="">No arm</option>
-                {armList.map((arm) => (
-                  <option key={arm.id} value={arm.id}>
-                    {arm.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className={labelClasses}>Outcome</label>
-              <textarea name="outcome" rows={2} className={inputClasses} />
-            </div>
-            <div>
-              <label className={labelClasses}>Next Step</label>
-              <input name="next_step" className={inputClasses} placeholder="e.g. Send proposal Friday" />
-            </div>
-            <button type="submit" className={submitClasses}>
-              Record Activity
-            </button>
-          </form>
-        </div>
-
-        <div className="rounded-xl border border-white/10 bg-white/[0.02] p-6">
-          <h2 className="font-display text-lg text-fog-100">Record Revenue</h2>
-          <form action={createRevenueRecordAction} className="mt-4 space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className={labelClasses}>Amount</label>
-                <input name="amount" type="number" step="0.01" required className={inputClasses} />
-              </div>
-              <div>
-                <label className={labelClasses}>Date</label>
-                <input name="recorded_on" type="date" required defaultValue={today} className={inputClasses} />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className={labelClasses}>Client</label>
-                <select name="client_id" className={inputClasses}>
-                  <option value="">Unassigned</option>
-                  {clientList.map((client) => (
-                    <option key={client.id} value={client.id}>
-                      {client.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className={labelClasses}>Business Arm</label>
-                <select name="business_arm_id" className={inputClasses}>
-                  <option value="">No arm</option>
-                  {armList.map((arm) => (
-                    <option key={arm.id} value={arm.id}>
-                      {arm.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className={labelClasses}>Service</label>
-                <select name="service_id" className={inputClasses}>
-                  <option value="">No service</option>
-                  {serviceList.map((service) => (
-                    <option key={service.id} value={service.id}>
-                      {service.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className={labelClasses}>Opportunity</label>
-                <select name="opportunity_id" className={inputClasses}>
-                  <option value="">No opportunity</option>
-                  {opportunityList.map((opportunity) => (
-                    <option key={opportunity.id} value={opportunity.id}>
-                      {opportunity.title}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className={labelClasses}>Category</label>
-                <select name="category" className={inputClasses}>
-                  <option value="service_fee">Service Fee</option>
-                  <option value="retainer">Retainer</option>
-                  <option value="commission">Commission</option>
-                  <option value="subscription">Subscription</option>
-                  <option value="other">Other</option>
-                </select>
-              </div>
-              <div>
-                <label className={labelClasses}>Status</label>
-                <select name="status" className={inputClasses}>
-                  {revenueStatuses.map((status) => (
-                    <option key={status} value={status}>
-                      {labelize(status)}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-            <div>
-              <label className={labelClasses}>Notes</label>
-              <textarea name="notes" rows={3} className={inputClasses} />
-            </div>
-            <button type="submit" className={submitClasses}>
-              Record Revenue
-            </button>
-          </form>
-        </div>
+        <PipelineBoard
+          initialOpportunities={opportunityList}
+          clients={clientList}
+          leads={leadList}
+          arms={armList}
+          services={serviceList}
+        />
       </div>
 
       <div className="overflow-x-auto rounded-xl border border-white/10">

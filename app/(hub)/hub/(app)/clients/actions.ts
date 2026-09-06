@@ -46,6 +46,41 @@ export async function updateClientAction(formData: FormData) {
   revalidatePath("/hub/clients");
 }
 
+export async function createClientAction(formData: FormData) {
+  const supabase = await createClient();
+
+  const name = String(formData.get("name") || "").trim();
+  if (!name) return;
+
+  const contactEmail = String(formData.get("contact_email") || "").trim() || null;
+  const phone = String(formData.get("phone") || "").trim() || null;
+  const notes = String(formData.get("notes") || "").trim() || null;
+
+  const { data, error } = await supabase
+    .from("clients")
+    .insert({
+      name,
+      contact_email: contactEmail,
+      phone,
+      notes,
+    })
+    .select("id")
+    .single();
+
+  if (error) {
+    console.error("Error creating client:", error.message);
+    return;
+  }
+
+  revalidatePath("/hub/clients");
+  revalidatePath("/hub/crm");
+  revalidatePath("/hub/dashboard");
+
+  if (data?.id) {
+    redirect(`/hub/clients/${data.id}`);
+  }
+}
+
 export async function addWithdrawalAction(formData: FormData) {
   const supabase = await createClient();
 

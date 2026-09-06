@@ -73,22 +73,23 @@ export default async function DashboardPage() {
   );
 
   const stats = [
-    { label: "Revenue Received", value: formatCurrency(receivedRevenue), tone: "gold" },
-    { label: "Booked Revenue", value: formatCurrency(bookedRevenue), tone: "default" },
-    { label: "Expected Revenue", value: formatCurrency(expectedRevenue), tone: "default" },
-    { label: "Weighted Pipeline", value: formatCurrency(weighted), tone: "default" },
-    { label: "Unpaid Invoices", value: formatCurrency(unpaidInvoices), tone: "default" },
-    { label: "Open Pipeline", value: formatCurrency(pipeline), tone: "default" },
-    { label: "Active Clients", value: String(clientList.length), tone: "default" },
+    { label: "Revenue Received", value: formatCurrency(receivedRevenue), sub: "Actual cash collected", tone: "gold" },
+    { label: "Booked Revenue", value: formatCurrency(bookedRevenue), sub: "Received + Invoiced", tone: "default" },
+    { label: "Weighted Pipeline", value: formatCurrency(weighted), sub: "Probability adjusted", tone: "default" },
+    { label: "Unpaid Invoices", value: formatCurrency(unpaidInvoices), sub: `${invoiceList.filter((i) => ["sent", "overdue"].includes(i.status)).length} open invoices`, tone: "default" },
+    { label: "Open Pipeline", value: formatCurrency(pipeline), sub: `${activeOpportunities.length} active deals`, tone: "default" },
+    { label: "Active Clients", value: String(clientList.length), sub: "Enterprise accounts", tone: "default" },
+    { label: "Inbound Leads", value: String(leadList.length), sub: "Diagnostic / Contact", tone: "default" },
+    { label: "Business Arms", value: String(armList.length), sub: "Platform divisions", tone: "default" },
   ];
 
   return (
-    <div className="space-y-10">
+    <div className="space-y-8">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="font-display text-2xl text-fog-100">Central Dashboard</h1>
+          <h1 className="font-display text-2xl md:text-3xl text-fog-100 tracking-tight">Executive Dashboard</h1>
           <p className="mt-1 text-sm text-fog-500">
-            Revenue, pipeline, activity, and business-arm performance across Flectere.
+            Real-time telemetry across revenue, pipeline, arm performance, and enterprise client operations.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
@@ -101,7 +102,7 @@ export default async function DashboardPage() {
               href="/hub/universe"
               className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-fog-400 transition hover:bg-white/5 hover:text-white"
             >
-              <span>🌌 3D Sentinel</span>
+              <span>🌌 3D Universe</span>
             </Link>
           </div>
 
@@ -109,7 +110,7 @@ export default async function DashboardPage() {
             href="/hub/crm"
             className="rounded-lg border border-gold/50 bg-gold px-4 py-2 text-sm font-medium text-ink-950 transition-colors hover:bg-gold-bright"
           >
-            Open CRM
+            Pipeline CRM
           </Link>
           <Link
             href="/hub/arms"
@@ -120,7 +121,7 @@ export default async function DashboardPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {stats.map((stat) => (
           <div
             key={stat.label}
@@ -130,10 +131,11 @@ export default async function DashboardPage() {
                 : "rounded-xl border border-white/10 bg-white/[0.02] p-5"
             }
           >
-            <p className={stat.tone === "gold" ? "text-xs uppercase tracking-widest2 text-gold" : "text-xs uppercase tracking-widest2 text-fog-500"}>
+            <p className={stat.tone === "gold" ? "text-xs uppercase tracking-widest2 text-gold font-bold" : "text-xs uppercase tracking-widest2 text-fog-500"}>
               {stat.label}
             </p>
             <p className="mt-2 font-display text-2xl text-fog-100">{stat.value}</p>
+            <p className="mt-1 text-[10px] text-fog-500 font-mono">{stat.sub}</p>
           </div>
         ))}
       </div>
