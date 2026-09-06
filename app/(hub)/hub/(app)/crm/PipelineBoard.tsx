@@ -6,6 +6,11 @@ import {
   armName,
   clientName,
   computeContractExtraction,
+  computeOpportunityActivityHealth,
+  getActivityBadgeColor,
+  getActivityIcon,
+  callOutcomes,
+  meetingTypes,
   labelize,
   leadName,
   opportunityStages,
@@ -15,6 +20,7 @@ import {
 import type {
   BusinessArm,
   Client,
+  CrmActivity,
   CrmOpportunity,
   Lead,
   RevenueRecord,
@@ -25,6 +31,7 @@ import {
   updateOpportunityAction,
   deleteOpportunityAction,
   createActivityAction,
+  deleteActivityAction,
   createRevenueRecordAction,
   updateOpportunityStageAction,
 } from "./actions";
@@ -36,6 +43,7 @@ interface PipelineBoardProps {
   arms: BusinessArm[];
   services: Service[];
   revenueRecords: RevenueRecord[];
+  activities?: CrmActivity[];
 }
 
 const STAGE_CONFIG: Record<
@@ -91,12 +99,19 @@ export function PipelineBoard({
   arms,
   services,
   revenueRecords,
+  activities = [],
 }: PipelineBoardProps) {
   const [modalMode, setModalMode] = useState<"deal" | "activity" | "revenue" | null>(null);
   const [editingDeal, setEditingDeal] = useState<CrmOpportunity | null>(null);
+  const [editDealTab, setEditDealTab] = useState<"details" | "activities" | "log">("details");
+  const [dealLogActivityTab, setDealLogActivityTab] = useState<"call" | "meeting" | "note" | "email">("call");
   const [selectedArmFilter, setSelectedArmFilter] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+
+  // Global activity modal states
+  const [activityModalOppId, setActivityModalOppId] = useState<string>("");
+  const [activityModalTypeTab, setActivityModalTypeTab] = useState<"call" | "meeting" | "note" | "email">("call");
 
   // Retainer interactive state in Create Deal modal
   const [isRetained, setIsRetained] = useState(false);
@@ -152,8 +167,9 @@ export function PipelineBoard({
     return true;
   });
 
-  function openEditModal(deal: CrmOpportunity) {
+  function openEditModal(deal: CrmOpportunity, initialTab: "details" | "activities" | "log" = "details") {
     setEditingDeal(deal);
+    setEditDealTab(initialTab);
     const hasRetainer = Boolean(deal.monthly_recurring && deal.monthly_recurring > 0);
     setEditIsRetained(hasRetainer);
     setEditSetupFee(deal.setup_fee ? String(deal.setup_fee) : "");
@@ -341,11 +357,68 @@ export function PipelineBoard({
                           </p>
                         )}
 
+                        {/* Pipedrive-Style Activity Health & Quick Logging */}
+                        {(() => {
+                          const health = computeOpportunityActivityHealth(deal.id, activities);
+                          const dealActivities = activities.filter((a) => a.opportunity_id === deal.id);
+                          return (
+                            <div className="pt-2 border-t border-white/5 space-y-1.5">
+                              <div className="flex items-center justify-between gap-1.5">
+                                <span
+                                  className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[9px] font-mono border ${health.badgeTone}`}
+                                  title={health.nextStep ? `Next: ${health.nextStep}` : health.label}
+                                >
+                                  {health.status === "scheduled" && "⏰"}
+                                  {health.status === "overdue" && "⚠️"}
+                                  {health.status === "no_activity" && "🔴"}
+                                  {health.status === "completed" && "✅"}
+                                  <span className="truncate max-w-[130px]">
+                                    {health.nextStep ? `Next: ${health.nextStep}` : health.label}
+                                  </span>
+                                </span>
+
+                                <button
+                                  type="button"
+                                  onClick={() => openEditModal(deal, "activities")}
+                                  className="text-[10px] font-mono text-fog-400 hover:text-gold transition cursor-pointer"
+                                >
+                                  💬 {dealActivities.length}
+                                </button>
+                              </div>
+
+                              <div className="flex items-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setActivityModalOppId(deal.id);
+                                    setActivityModalTypeTab("call");
+                                    setModalMode("activity");
+                                  }}
+                                  className="flex-1 flex items-center justify-center gap-1 rounded bg-white/[0.04] hover:bg-gold/15 hover:text-gold border border-white/10 px-2 py-1 text-[10px] font-medium text-fog-300 transition cursor-pointer"
+                                >
+                                  <span>📞</span> Call
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setActivityModalOppId(deal.id);
+                                    setActivityModalTypeTab("note");
+                                    setModalMode("activity");
+                                  }}
+                                  className="flex items-center justify-center gap-1 rounded bg-white/[0.04] hover:bg-white/10 hover:text-white border border-white/10 px-2 py-1 text-[10px] font-medium text-fog-400 transition cursor-pointer"
+                                >
+                                  <span>📝</span> Note
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })()}
+
                         {/* Stage Switcher & Quick Edit Action */}
                         <div className="pt-2 border-t border-white/5 flex items-center justify-between gap-2">
                           <button
                             type="button"
-                            onClick={() => openEditModal(deal)}
+                            onClick={() => openEditModal(deal, "details")}
                             className="text-[10px] text-gold hover:underline cursor-pointer"
                           >
                             Edit / Expand ➔
@@ -389,255 +462,641 @@ export function PipelineBoard({
         </div>
       </div>
 
-      {/* Modal Dialog for Edit Deal / Corrections */}
-      {editingDeal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-          <div className="w-full max-w-xl rounded-2xl border border-white/15 bg-ink-950 p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-150 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between border-b border-white/10 pb-3 mb-4">
-              <div>
-                <h3 className="font-display text-lg text-fog-100">Edit Pipeline Deal</h3>
-                <p className="text-xs text-fog-500">Update deal financials, retainer structure, or contract details</p>
-              </div>
-              <button
-                onClick={() => setEditingDeal(null)}
-                className="text-fog-400 hover:text-white text-lg font-mono cursor-pointer"
-              >
-                ✕
-              </button>
-            </div>
+      {/* Modal Dialog for Edit Deal / Activities Hub */}
+      {editingDeal && (() => {
+        const oppActivities = activities.filter((a) => a.opportunity_id === editingDeal.id);
+        const activeClient = clients.find((c) => c.id === editingDeal.client_id);
+        const activeLead = leads.find((l) => l.id === editingDeal.lead_id);
+        const entityName = activeClient?.name ?? (activeLead ? leadName(activeLead.id, leads) : editingDeal.title);
 
-            <form
-              action={async (formData) => {
-                await updateOpportunityAction(formData);
-                setEditingDeal(null);
-              }}
-              className="space-y-4"
-            >
-              <input type="hidden" name="id" value={editingDeal.id} />
-
-              <div>
-                <label className={labelClasses}>Deal Title *</label>
-                <input
-                  name="title"
-                  required
-                  defaultValue={editingDeal.title}
-                  className={inputClasses}
-                />
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+            <div className="w-full max-w-2xl rounded-2xl border border-white/15 bg-ink-950 p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-150 max-h-[92vh] overflow-y-auto">
+              {/* Header */}
+              <div className="flex items-center justify-between border-b border-white/10 pb-3 mb-4">
+                <div>
+                  <h3 className="font-display text-lg text-fog-100">{editingDeal.title}</h3>
+                  <p className="text-xs text-fog-500">
+                    {entityName} · {armName(editingDeal.business_arm_id, arms)}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setEditingDeal(null)}
+                  className="text-fog-400 hover:text-white text-lg font-mono cursor-pointer"
+                >
+                  ✕
+                </button>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className={labelClasses}>Client</label>
-                  <select name="client_id" defaultValue={editingDeal.client_id ?? ""} className={inputClasses}>
-                    <option value="">Unassigned</option>
-                    {clients.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
-                      </option>
-                    ))}
-                  </select>
+              {/* Salesforce Stage Path */}
+              <div className="mb-5 space-y-1.5">
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="text-fog-400 uppercase tracking-widest2 font-semibold">Deal Stage Path</span>
+                  <span className="text-gold font-mono font-bold">{labelize(editingDeal.stage)}</span>
                 </div>
-                <div>
-                  <label className={labelClasses}>Business Arm</label>
-                  <select name="business_arm_id" defaultValue={editingDeal.business_arm_id ?? ""} className={inputClasses}>
-                    <option value="">No arm selected</option>
-                    {arms.map((a) => (
-                      <option key={a.id} value={a.id}>
-                        {a.name}
-                      </option>
-                    ))}
-                    {!arms.some((a) => a.name.toLowerCase() === "custom") && (
-                      <option value="custom">Custom</option>
-                    )}
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className={labelClasses}>Service Offering</label>
-                  <select name="service_id" defaultValue={editingDeal.service_id ?? ""} className={inputClasses}>
-                    <option value="">No specific service</option>
-                    {services.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.name}
-                      </option>
-                    ))}
-                    {!services.some((s) => s.name.toLowerCase() === "custom") && (
-                      <option value="custom">Custom</option>
-                    )}
-                  </select>
-                </div>
-                <div>
-                  <label className={labelClasses}>Pipeline Stage</label>
-                  <select name="stage" defaultValue={editingDeal.stage} className={inputClasses}>
-                    {opportunityStages.map((st) => (
-                      <option key={st} value={st}>
+                <div className="grid grid-cols-6 gap-1 p-1 bg-black/50 border border-white/10 rounded-lg">
+                  {opportunityStages.map((st) => {
+                    const isCurrent = editingDeal.stage === st;
+                    return (
+                      <button
+                        key={st}
+                        type="button"
+                        onClick={async () => {
+                          const formData = new FormData();
+                          formData.append("id", editingDeal.id);
+                          formData.append("stage", st);
+                          await updateOpportunityStageAction(formData);
+                          setEditingDeal({ ...editingDeal, stage: st });
+                        }}
+                        className={`py-1.5 text-[10px] rounded text-center transition font-semibold truncate px-1 cursor-pointer ${
+                          isCurrent
+                            ? "bg-gold text-ink-950 shadow font-bold"
+                            : "text-fog-400 hover:text-white hover:bg-white/5"
+                        }`}
+                      >
                         {labelize(st)}
-                      </option>
-                    ))}
-                  </select>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
-              {/* Retainer Checkbox Switch */}
-              <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <label className="text-xs font-bold text-fog-100 flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={editIsRetained}
-                        onChange={(e) => setEditIsRetained(e.target.checked)}
-                        className="rounded border-white/20 text-gold focus:ring-gold"
-                      />
-                      Is this client on a monthly retainer?
-                    </label>
-                    <p className="text-[11px] text-fog-500 mt-0.5">
-                      Flectēre will track recurring MRR, contract length, and expected vs recovered cash.
-                    </p>
-                  </div>
-                  {editIsRetained && (
-                    <span className="text-[10px] bg-gold/20 text-gold font-mono font-bold px-2 py-0.5 rounded">
-                      RETAINER MODEL
-                    </span>
-                  )}
-                </div>
-
-                {editIsRetained && (
-                  <div className="grid grid-cols-3 gap-3 pt-2 border-t border-white/5">
-                    <div>
-                      <label className={labelClasses}>Setup / Onboarding ($)</label>
-                      <input
-                        name="setup_fee"
-                        type="number"
-                        step="0.01"
-                        value={editSetupFee}
-                        onChange={(e) => setEditSetupFee(e.target.value)}
-                        placeholder="e.g. 5000"
-                        className={inputClasses}
-                      />
-                    </div>
-                    <div>
-                      <label className={labelClasses}>Monthly Retainer ($) *</label>
-                      <input
-                        name="monthly_recurring"
-                        type="number"
-                        step="0.01"
-                        required={editIsRetained}
-                        value={editMonthlyRetainer}
-                        onChange={(e) => setEditMonthlyRetainer(e.target.value)}
-                        placeholder="e.g. 1500"
-                        className={inputClasses}
-                      />
-                    </div>
-                    <div>
-                      <label className={labelClasses}>Duration (Months)</label>
-                      <input
-                        name="contract_months"
-                        type="number"
-                        min="1"
-                        value={editRetainerMonths}
-                        onChange={(e) => setEditRetainerMonths(e.target.value)}
-                        className={inputClasses}
-                      />
-                    </div>
-                  </div>
-                )}
-
-                {editIsRetained && (
-                  <div className="rounded-lg bg-black/40 p-2.5 text-xs text-fog-300 flex justify-between font-mono">
-                    <span>Computed Total Contract Value (TCV):</span>
-                    <span className="text-gold font-bold">
-                      {formatCurrency(
-                        Number(editSetupFee || 0) +
-                          Number(editMonthlyRetainer || 0) * Number(editRetainerMonths || 12)
-                      )}
-                    </span>
-                  </div>
-                )}
-              </div>
-
-              <div className="grid grid-cols-3 gap-3">
-                <div>
-                  <label className={labelClasses}>Flat / Total Deal Value ($)</label>
-                  <input
-                    name="value"
-                    type="number"
-                    step="0.01"
-                    defaultValue={editingDeal.value ?? ""}
-                    className={inputClasses}
-                    placeholder="e.g. 18000"
-                  />
-                </div>
-                <div>
-                  <label className={labelClasses}>Win Prob. (%)</label>
-                  <input
-                    name="probability"
-                    type="number"
-                    min="0"
-                    max="100"
-                    defaultValue={editingDeal.probability}
-                    className={inputClasses}
-                  />
-                </div>
-                <div>
-                  <label className={labelClasses}>Target Close</label>
-                  <input
-                    name="expected_close_on"
-                    type="date"
-                    defaultValue={editingDeal.expected_close_on ?? ""}
-                    className={inputClasses}
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className={labelClasses}>Notes & Objections</label>
-                <textarea
-                  name="notes"
-                  rows={2}
-                  defaultValue={editingDeal.notes ?? ""}
-                  className={inputClasses}
-                />
-              </div>
-
-              <div className="pt-3 flex justify-between items-center border-t border-white/10">
+              {/* Navigation Tabs */}
+              <div className="flex items-center gap-2 border-b border-white/10 pb-2 mb-4">
                 <button
                   type="button"
-                  onClick={async () => {
-                    if (confirm("Are you sure you want to delete this deal?")) {
-                      const formData = new FormData();
-                      formData.append("id", editingDeal.id);
-                      await deleteOpportunityAction(formData);
-                      setEditingDeal(null);
-                    }
-                  }}
-                  className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3.5 py-2 text-xs font-semibold text-rose-400 hover:bg-rose-500/20 cursor-pointer"
+                  onClick={() => setEditDealTab("details")}
+                  className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition cursor-pointer ${
+                    editDealTab === "details"
+                      ? "bg-white/10 text-white border border-white/15"
+                      : "text-fog-400 hover:text-fog-200"
+                  }`}
                 >
-                  Delete Deal
+                  Deal Terms & Details
                 </button>
-
-                <div className="flex gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setEditingDeal(null)}
-                    className="rounded-lg border border-white/10 px-4 py-2 text-xs text-fog-300 hover:bg-white/5 cursor-pointer"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    className="rounded-lg border border-gold/50 bg-gold px-5 py-2 text-xs font-bold text-ink-950 hover:bg-gold-bright transition cursor-pointer"
-                  >
-                    Save Changes
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => setEditDealTab("activities")}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition cursor-pointer ${
+                    editDealTab === "activities"
+                      ? "bg-white/10 text-white border border-white/15"
+                      : "text-fog-400 hover:text-fog-200"
+                  }`}
+                >
+                  <span>Activity History</span>
+                  <span className="rounded-full bg-white/10 px-1.5 py-0.2 text-[10px] font-mono">
+                    {oppActivities.length}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditDealTab("log")}
+                  className={`flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg transition cursor-pointer ${
+                    editDealTab === "log"
+                      ? "bg-gold/20 text-gold border border-gold/40"
+                      : "text-gold/80 hover:text-gold hover:bg-gold/10"
+                  }`}
+                >
+                  <span>+</span> Log Touchpoint
+                </button>
               </div>
-            </form>
+
+              {/* TAB 1: Activity History */}
+              {editDealTab === "activities" && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs text-fog-400 font-medium">
+                      All logged calls, meetings, notes, and milestones for this deal:
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setEditDealTab("log")}
+                      className="rounded bg-gold/10 border border-gold/30 px-2.5 py-1 text-xs text-gold font-semibold hover:bg-gold/20 transition cursor-pointer"
+                    >
+                      + Log Call or Note
+                    </button>
+                  </div>
+
+                  {oppActivities.length === 0 ? (
+                    <div className="py-10 text-center rounded-xl border border-dashed border-white/10 bg-white/[0.01]">
+                      <p className="text-2xl mb-1">📞</p>
+                      <p className="text-sm text-fog-300 font-semibold">No activity recorded yet</p>
+                      <p className="text-xs text-fog-500 mt-1 max-w-sm mx-auto">
+                        Log calls, discovery meetings, or sales notes just like Salesforce and Pipedrive to track this deal.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDealLogActivityTab("call");
+                          setEditDealTab("log");
+                        }}
+                        className="mt-3 rounded-lg border border-gold/50 bg-gold px-4 py-1.5 text-xs font-bold text-ink-950 hover:bg-gold-bright transition cursor-pointer"
+                      >
+                        Log First Call
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {oppActivities.map((act) => {
+                        const icon = getActivityIcon(act.activity_type);
+                        const colors = getActivityBadgeColor(act.activity_type);
+                        return (
+                          <div
+                            key={act.id}
+                            className="rounded-xl border border-white/10 bg-white/[0.02] p-4 space-y-2 hover:border-white/20 transition"
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex items-center gap-2">
+                                <span className="text-base">{icon}</span>
+                                <div>
+                                  <div className="flex items-center gap-2">
+                                    <h4 className="text-xs font-bold text-fog-100">{act.subject}</h4>
+                                    <span
+                                      className={`rounded px-1.5 py-0.5 text-[9px] uppercase font-bold tracking-wider border ${colors.bg} ${colors.text} ${colors.border}`}
+                                    >
+                                      {labelize(act.activity_type)}
+                                    </span>
+                                  </div>
+                                  <p className="text-[10px] text-fog-500 font-mono mt-0.5">
+                                    {new Date(act.activity_date).toLocaleDateString("en-US", {
+                                      month: "short",
+                                      day: "numeric",
+                                      year: "numeric",
+                                    })}
+                                  </p>
+                                </div>
+                              </div>
+
+                              <form
+                                action={async (formData) => {
+                                  await deleteActivityAction(formData);
+                                }}
+                              >
+                                <input type="hidden" name="id" value={act.id} />
+                                <button
+                                  type="submit"
+                                  title="Delete this activity log"
+                                  className="text-fog-600 hover:text-rose-400 text-xs font-mono transition cursor-pointer p-1"
+                                >
+                                  ✕
+                                </button>
+                              </form>
+                            </div>
+
+                            {act.outcome && (
+                              <div className="rounded bg-black/40 border-l-2 border-gold/60 p-2.5 text-xs text-fog-300 whitespace-pre-wrap">
+                                {act.outcome}
+                              </div>
+                            )}
+
+                            {act.next_step && (
+                              <div className="flex items-center gap-1.5 text-[11px] text-gold font-medium">
+                                <span className="text-xs">⏰</span>
+                                <span>Next: {act.next_step}</span>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* TAB 2: Log Touchpoint */}
+              {editDealTab === "log" && (
+                <div className="space-y-4">
+                  {/* Touchpoint Type Selector */}
+                  <div className="flex rounded-lg border border-white/10 bg-black/40 p-1">
+                    <button
+                      type="button"
+                      onClick={() => setDealLogActivityTab("call")}
+                      className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition cursor-pointer flex items-center justify-center gap-1.5 ${
+                        dealLogActivityTab === "call"
+                          ? "bg-gold text-ink-950 font-bold"
+                          : "text-fog-400 hover:text-white"
+                      }`}
+                    >
+                      <span>📞</span> Log Call
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDealLogActivityTab("meeting")}
+                      className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition cursor-pointer flex items-center justify-center gap-1.5 ${
+                        dealLogActivityTab === "meeting"
+                          ? "bg-gold text-ink-950 font-bold"
+                          : "text-fog-400 hover:text-white"
+                      }`}
+                    >
+                      <span>🤝</span> Log Meeting
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDealLogActivityTab("note")}
+                      className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition cursor-pointer flex items-center justify-center gap-1.5 ${
+                        dealLogActivityTab === "note"
+                          ? "bg-gold text-ink-950 font-bold"
+                          : "text-fog-400 hover:text-white"
+                      }`}
+                    >
+                      <span>📝</span> Add Note
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDealLogActivityTab("email")}
+                      className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition cursor-pointer flex items-center justify-center gap-1.5 ${
+                        dealLogActivityTab === "email"
+                          ? "bg-gold text-ink-950 font-bold"
+                          : "text-fog-400 hover:text-white"
+                      }`}
+                    >
+                      <span>✉️</span> Log Email
+                    </button>
+                  </div>
+
+                  <form
+                    action={async (formData) => {
+                      await createActivityAction(formData);
+                      setEditDealTab("activities");
+                    }}
+                    className="space-y-3"
+                  >
+                    <input type="hidden" name="opportunity_id" value={editingDeal.id} />
+                    <input type="hidden" name="client_id" value={editingDeal.client_id ?? ""} />
+                    <input type="hidden" name="lead_id" value={editingDeal.lead_id ?? ""} />
+                    <input type="hidden" name="business_arm_id" value={editingDeal.business_arm_id ?? ""} />
+                    <input type="hidden" name="activity_type" value={dealLogActivityTab} />
+
+                    <div>
+                      <label className={labelClasses}>Subject *</label>
+                      <input
+                        name="subject"
+                        required
+                        defaultValue={
+                          dealLogActivityTab === "call"
+                            ? `Call with ${entityName}`
+                            : dealLogActivityTab === "meeting"
+                            ? `Meeting with ${entityName}`
+                            : dealLogActivityTab === "email"
+                            ? `Email touchpoint with ${entityName}`
+                            : `Note on ${editingDeal.title}`
+                        }
+                        className={inputClasses}
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      {dealLogActivityTab === "call" && (
+                        <div>
+                          <label className={labelClasses}>Call Result / Outcome</label>
+                          <select name="call_outcome" className={inputClasses}>
+                            {callOutcomes.map((co) => (
+                              <option key={co.value} value={co.label}>
+                                {co.label}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+
+                      {dealLogActivityTab === "meeting" && (
+                        <div>
+                          <label className={labelClasses}>Meeting Type</label>
+                          <select name="call_outcome" className={inputClasses}>
+                            {meetingTypes.map((mt) => (
+                              <option key={mt.value} value={mt.label}>
+                                {mt.label}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+
+                      <div>
+                        <label className={labelClasses}>
+                          {dealLogActivityTab === "call" || dealLogActivityTab === "meeting"
+                            ? "Duration"
+                            : "Date"}
+                        </label>
+                        {dealLogActivityTab === "call" || dealLogActivityTab === "meeting" ? (
+                          <select name="duration" defaultValue="15m" className={inputClasses}>
+                            <option value="5m">5 minutes</option>
+                            <option value="15m">15 minutes</option>
+                            <option value="30m">30 minutes</option>
+                            <option value="45m">45 minutes</option>
+                            <option value="1h">1 hour</option>
+                            <option value="1.5h+">1.5+ hours</option>
+                          </select>
+                        ) : (
+                          <input
+                            name="activity_date"
+                            type="date"
+                            defaultValue={today}
+                            className={inputClasses}
+                          />
+                        )}
+                      </div>
+
+                      {(dealLogActivityTab === "call" || dealLogActivityTab === "meeting") && (
+                        <div>
+                          <label className={labelClasses}>Activity Date</label>
+                          <input
+                            name="activity_date"
+                            type="date"
+                            defaultValue={today}
+                            className={inputClasses}
+                          />
+                        </div>
+                      )}
+                    </div>
+
+                    <div>
+                      <label className={labelClasses}>
+                        {dealLogActivityTab === "call"
+                          ? "Call Notes & Takeaways"
+                          : dealLogActivityTab === "meeting"
+                          ? "Meeting Notes & Decision Makers"
+                          : dealLogActivityTab === "email"
+                          ? "Email Summary & Correspondence"
+                          : "Note Content"}
+                      </label>
+                      <textarea
+                        name="notes"
+                        rows={3}
+                        required
+                        placeholder={
+                          dealLogActivityTab === "call"
+                            ? "Discussed pricing, operational bottlenecks, client wants draft proposal by Friday..."
+                            : "Enter notes and key takeaways..."
+                        }
+                        className={inputClasses}
+                      />
+                    </div>
+
+                    <div>
+                      <label className={labelClasses}>Next Action / Follow-up Milestone</label>
+                      <input
+                        name="next_step"
+                        placeholder="e.g. Transmit formal engagement contract by Tuesday"
+                        className={inputClasses}
+                      />
+                    </div>
+
+                    <div className="pt-2 flex justify-end gap-3 border-t border-white/10">
+                      <button
+                        type="button"
+                        onClick={() => setEditDealTab("activities")}
+                        className="rounded-lg border border-white/10 px-4 py-2 text-xs text-fog-300 hover:bg-white/5 cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        className="rounded-lg border border-gold/50 bg-gold px-5 py-2 text-xs font-bold text-ink-950 hover:bg-gold-bright transition cursor-pointer"
+                      >
+                        Save Activity
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              )}
+
+              {/* TAB 3: Details & Terms */}
+              {editDealTab === "details" && (
+                <form
+                  action={async (formData) => {
+                    await updateOpportunityAction(formData);
+                    setEditingDeal(null);
+                  }}
+                  className="space-y-4"
+                >
+                  <input type="hidden" name="id" value={editingDeal.id} />
+
+                  <div>
+                    <label className={labelClasses}>Deal Title *</label>
+                    <input
+                      name="title"
+                      required
+                      defaultValue={editingDeal.title}
+                      className={inputClasses}
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className={labelClasses}>Client</label>
+                      <select name="client_id" defaultValue={editingDeal.client_id ?? ""} className={inputClasses}>
+                        <option value="">Unassigned</option>
+                        {clients.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className={labelClasses}>Business Arm</label>
+                      <select name="business_arm_id" defaultValue={editingDeal.business_arm_id ?? ""} className={inputClasses}>
+                        <option value="">No arm selected</option>
+                        {arms.map((a) => (
+                          <option key={a.id} value={a.id}>
+                            {a.name}
+                          </option>
+                        ))}
+                        {!arms.some((a) => a.name.toLowerCase() === "custom") && (
+                          <option value="custom">Custom</option>
+                        )}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className={labelClasses}>Service Offering</label>
+                      <select name="service_id" defaultValue={editingDeal.service_id ?? ""} className={inputClasses}>
+                        <option value="">No specific service</option>
+                        {services.map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.name}
+                          </option>
+                        ))}
+                        {!services.some((s) => s.name.toLowerCase() === "custom") && (
+                          <option value="custom">Custom</option>
+                        )}
+                      </select>
+                    </div>
+                    <div>
+                      <label className={labelClasses}>Pipeline Stage</label>
+                      <select name="stage" defaultValue={editingDeal.stage} className={inputClasses}>
+                        {opportunityStages.map((st) => (
+                          <option key={st} value={st}>
+                            {labelize(st)}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Retainer Checkbox Switch */}
+                  <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <label className="text-xs font-bold text-fog-100 flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={editIsRetained}
+                            onChange={(e) => setEditIsRetained(e.target.checked)}
+                            className="rounded border-white/20 text-gold focus:ring-gold"
+                          />
+                          Is this client on a monthly retainer?
+                        </label>
+                        <p className="text-[11px] text-fog-500 mt-0.5">
+                          Flectēre will track recurring MRR, contract length, and expected vs recovered cash.
+                        </p>
+                      </div>
+                      {editIsRetained && (
+                        <span className="text-[10px] bg-gold/20 text-gold font-mono font-bold px-2 py-0.5 rounded">
+                          RETAINER MODEL
+                        </span>
+                      )}
+                    </div>
+
+                    {editIsRetained && (
+                      <div className="grid grid-cols-3 gap-3 pt-2 border-t border-white/5">
+                        <div>
+                          <label className={labelClasses}>Setup / Onboarding ($)</label>
+                          <input
+                            name="setup_fee"
+                            type="number"
+                            step="0.01"
+                            value={editSetupFee}
+                            onChange={(e) => setEditSetupFee(e.target.value)}
+                            placeholder="e.g. 5000"
+                            className={inputClasses}
+                          />
+                        </div>
+                        <div>
+                          <label className={labelClasses}>Monthly Retainer ($) *</label>
+                          <input
+                            name="monthly_recurring"
+                            type="number"
+                            step="0.01"
+                            required={editIsRetained}
+                            value={editMonthlyRetainer}
+                            onChange={(e) => setEditMonthlyRetainer(e.target.value)}
+                            placeholder="e.g. 1500"
+                            className={inputClasses}
+                          />
+                        </div>
+                        <div>
+                          <label className={labelClasses}>Duration (Months)</label>
+                          <input
+                            name="contract_months"
+                            type="number"
+                            min="1"
+                            value={editRetainerMonths}
+                            onChange={(e) => setEditRetainerMonths(e.target.value)}
+                            className={inputClasses}
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    {editIsRetained && (
+                      <div className="rounded-lg bg-black/40 p-2.5 text-xs text-fog-300 flex justify-between font-mono">
+                        <span>Computed Total Contract Value (TCV):</span>
+                        <span className="text-gold font-bold">
+                          {formatCurrency(
+                            Number(editSetupFee || 0) +
+                              Number(editMonthlyRetainer || 0) * Number(editRetainerMonths || 12)
+                          )}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-3">
+                    <div>
+                      <label className={labelClasses}>Flat / Total Deal Value ($)</label>
+                      <input
+                        name="value"
+                        type="number"
+                        step="0.01"
+                        defaultValue={editingDeal.value ?? ""}
+                        className={inputClasses}
+                        placeholder="e.g. 18000"
+                      />
+                    </div>
+                    <div>
+                      <label className={labelClasses}>Win Prob. (%)</label>
+                      <input
+                        name="probability"
+                        type="number"
+                        min="0"
+                        max="100"
+                        defaultValue={editingDeal.probability}
+                        className={inputClasses}
+                      />
+                    </div>
+                    <div>
+                      <label className={labelClasses}>Target Close</label>
+                      <input
+                        name="expected_close_on"
+                        type="date"
+                        defaultValue={editingDeal.expected_close_on ?? ""}
+                        className={inputClasses}
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className={labelClasses}>Notes & Objections</label>
+                    <textarea
+                      name="notes"
+                      rows={2}
+                      defaultValue={editingDeal.notes ?? ""}
+                      className={inputClasses}
+                    />
+                  </div>
+
+                  <div className="pt-3 flex justify-between items-center border-t border-white/10">
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (confirm("Are you sure you want to delete this deal?")) {
+                          const formData = new FormData();
+                          formData.append("id", editingDeal.id);
+                          await deleteOpportunityAction(formData);
+                          setEditingDeal(null);
+                        }
+                      }}
+                      className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3.5 py-2 text-xs font-semibold text-rose-400 hover:bg-rose-500/20 cursor-pointer"
+                    >
+                      Delete Deal
+                    </button>
+
+                    <div className="flex gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setEditingDeal(null)}
+                        className="rounded-lg border border-white/10 px-4 py-2 text-xs text-fog-300 hover:bg-white/5 cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        className="rounded-lg border border-gold/50 bg-gold px-5 py-2 text-xs font-bold text-ink-950 hover:bg-gold-bright transition cursor-pointer"
+                      >
+                        Save Changes
+                      </button>
+                    </div>
+                  </div>
+                </form>
+              )}
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Modal Dialog for New Deal */}
       {modalMode === "deal" && (
@@ -879,14 +1338,60 @@ export function PipelineBoard({
       {/* Modal Dialog for Log Activity */}
       {modalMode === "activity" && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-          <div className="w-full max-w-lg rounded-2xl border border-white/10 bg-ink-950 p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-150">
+          <div className="w-full max-w-lg rounded-2xl border border-white/10 bg-ink-950 p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-150 max-h-[92vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-white/10 pb-3 mb-4">
-              <h3 className="font-display text-lg text-fog-100">Log CRM Activity</h3>
+              <div>
+                <h3 className="font-display text-lg text-fog-100">Log Sales Activity</h3>
+                <p className="text-xs text-fog-500">Record calls, notes, meetings, and next follow-ups</p>
+              </div>
               <button
-                onClick={() => setModalMode(null)}
+                onClick={() => {
+                  setModalMode(null);
+                  setActivityModalOppId("");
+                }}
                 className="text-fog-400 hover:text-white text-lg font-mono cursor-pointer"
               >
                 ✕
+              </button>
+            </div>
+
+            {/* Type selector tabs */}
+            <div className="flex rounded-lg border border-white/10 bg-black/40 p-1 mb-4">
+              <button
+                type="button"
+                onClick={() => setActivityModalTypeTab("call")}
+                className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition cursor-pointer flex items-center justify-center gap-1 ${
+                  activityModalTypeTab === "call" ? "bg-gold text-ink-950 font-bold" : "text-fog-400 hover:text-white"
+                }`}
+              >
+                <span>📞</span> Call
+              </button>
+              <button
+                type="button"
+                onClick={() => setActivityModalTypeTab("meeting")}
+                className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition cursor-pointer flex items-center justify-center gap-1 ${
+                  activityModalTypeTab === "meeting" ? "bg-gold text-ink-950 font-bold" : "text-fog-400 hover:text-white"
+                }`}
+              >
+                <span>🤝</span> Meeting
+              </button>
+              <button
+                type="button"
+                onClick={() => setActivityModalTypeTab("note")}
+                className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition cursor-pointer flex items-center justify-center gap-1 ${
+                  activityModalTypeTab === "note" ? "bg-gold text-ink-950 font-bold" : "text-fog-400 hover:text-white"
+                }`}
+              >
+                <span>📝</span> Note
+              </button>
+              <button
+                type="button"
+                onClick={() => setActivityModalTypeTab("email")}
+                className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition cursor-pointer flex items-center justify-center gap-1 ${
+                  activityModalTypeTab === "email" ? "bg-gold text-ink-950 font-bold" : "text-fog-400 hover:text-white"
+                }`}
+              >
+                <span>✉️</span> Email
               </button>
             </div>
 
@@ -894,43 +1399,52 @@ export function PipelineBoard({
               action={async (formData) => {
                 await createActivityAction(formData);
                 setModalMode(null);
+                setActivityModalOppId("");
               }}
-              className="space-y-4"
+              className="space-y-3.5"
             >
+              <input type="hidden" name="activity_type" value={activityModalTypeTab} />
+
               <div>
                 <label className={labelClasses}>Subject *</label>
                 <input
                   name="subject"
                   required
+                  defaultValue={
+                    activityModalOppId
+                      ? `${activityModalTypeTab === "call" ? "Call" : activityModalTypeTab === "meeting" ? "Meeting" : activityModalTypeTab === "email" ? "Email" : "Note"} on ${
+                          initialOpportunities.find((o) => o.id === activityModalOppId)?.title ?? "Deal"
+                        }`
+                      : activityModalTypeTab === "call"
+                      ? "Phone Discussion"
+                      : activityModalTypeTab === "meeting"
+                      ? "Client Strategy Meeting"
+                      : activityModalTypeTab === "email"
+                      ? "Email Correspondence"
+                      : "General CRM Note"
+                  }
                   className={inputClasses}
-                  placeholder="e.g. Architecture review & contract negotiation call"
+                  placeholder="e.g. Discovery call with CEO"
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className={labelClasses}>Activity Type</label>
-                  <select name="activity_type" className={inputClasses}>
-                    {activityTypes.map((t) => (
-                      <option key={t} value={t}>
-                        {labelize(t)}
+                  <label className={labelClasses}>Opportunity / Deal</label>
+                  <select
+                    name="opportunity_id"
+                    defaultValue={activityModalOppId}
+                    className={inputClasses}
+                  >
+                    <option value="">No deal attached</option>
+                    {initialOpportunities.map((o) => (
+                      <option key={o.id} value={o.id}>
+                        {o.title}
                       </option>
                     ))}
                   </select>
                 </div>
-                <div>
-                  <label className={labelClasses}>Date *</label>
-                  <input
-                    name="activity_date"
-                    type="date"
-                    required
-                    defaultValue={today}
-                    className={inputClasses}
-                  />
-                </div>
-              </div>
 
-              <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className={labelClasses}>Client</label>
                   <select name="client_id" className={inputClasses}>
@@ -942,54 +1456,106 @@ export function PipelineBoard({
                     ))}
                   </select>
                 </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                {activityModalTypeTab === "call" && (
+                  <div>
+                    <label className={labelClasses}>Call Result / Outcome</label>
+                    <select name="call_outcome" className={inputClasses}>
+                      {callOutcomes.map((co) => (
+                        <option key={co.value} value={co.label}>
+                          {co.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {activityModalTypeTab === "meeting" && (
+                  <div>
+                    <label className={labelClasses}>Meeting Type</label>
+                    <select name="call_outcome" className={inputClasses}>
+                      {meetingTypes.map((mt) => (
+                        <option key={mt.value} value={mt.label}>
+                          {mt.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
                 <div>
-                  <label className={labelClasses}>Opportunity / Deal</label>
-                  <select name="opportunity_id" className={inputClasses}>
-                    <option value="">No opportunity attached</option>
-                    {initialOpportunities.map((o) => (
-                      <option key={o.id} value={o.id}>
-                        {o.title}
-                      </option>
-                    ))}
-                  </select>
+                  <label className={labelClasses}>
+                    {activityModalTypeTab === "call" || activityModalTypeTab === "meeting" ? "Duration" : "Date"}
+                  </label>
+                  {activityModalTypeTab === "call" || activityModalTypeTab === "meeting" ? (
+                    <select name="duration" defaultValue="15m" className={inputClasses}>
+                      <option value="5m">5 minutes</option>
+                      <option value="15m">15 minutes</option>
+                      <option value="30m">30 minutes</option>
+                      <option value="45m">45 minutes</option>
+                      <option value="1h">1 hour</option>
+                      <option value="1.5h+">1.5+ hours</option>
+                    </select>
+                  ) : (
+                    <input
+                      name="activity_date"
+                      type="date"
+                      defaultValue={today}
+                      className={inputClasses}
+                    />
+                  )}
                 </div>
+
+                {(activityModalTypeTab === "call" || activityModalTypeTab === "meeting") && (
+                  <div>
+                    <label className={labelClasses}>Activity Date</label>
+                    <input
+                      name="activity_date"
+                      type="date"
+                      defaultValue={today}
+                      className={inputClasses}
+                    />
+                  </div>
+                )}
               </div>
 
               <div>
-                <label className={labelClasses}>Business Arm</label>
-                <select name="business_arm_id" className={inputClasses}>
-                  <option value="">No arm</option>
-                  {arms.map((a) => (
-                    <option key={a.id} value={a.id}>
-                      {a.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className={labelClasses}>Outcome Summary</label>
+                <label className={labelClasses}>
+                  {activityModalTypeTab === "call"
+                    ? "Call Notes & Discussion Summary"
+                    : activityModalTypeTab === "meeting"
+                    ? "Meeting Notes & Decisions"
+                    : activityModalTypeTab === "email"
+                    ? "Email Notes & Correspondence"
+                    : "Note Content"}
+                </label>
                 <textarea
-                  name="outcome"
-                  rows={2}
+                  name="notes"
+                  rows={3}
+                  required
                   className={inputClasses}
-                  placeholder="Client approved phase 1 pricing; waiting on signoff..."
+                  placeholder="Record discussion points, objections, pricing reaction, or requirements..."
                 />
               </div>
 
               <div>
-                <label className={labelClasses}>Next Action / Milestone</label>
+                <label className={labelClasses}>Next Action / Follow-up Milestone</label>
                 <input
                   name="next_step"
                   className={inputClasses}
-                  placeholder="e.g. Transmit master services agreement on Monday"
+                  placeholder="e.g. Schedule Zoom demo with engineering team next Tuesday"
                 />
               </div>
 
               <div className="pt-2 flex justify-end gap-3 border-t border-white/10">
                 <button
                   type="button"
-                  onClick={() => setModalMode(null)}
+                  onClick={() => {
+                    setModalMode(null);
+                    setActivityModalOppId("");
+                  }}
                   className="rounded-lg border border-white/10 px-4 py-2 text-xs text-fog-300 hover:bg-white/5 cursor-pointer"
                 >
                   Cancel
@@ -998,7 +1564,7 @@ export function PipelineBoard({
                   type="submit"
                   className="rounded-lg border border-gold/50 bg-gold px-5 py-2 text-xs font-bold text-ink-950 hover:bg-gold-bright transition cursor-pointer"
                 >
-                  Log Activity
+                  Save Activity
                 </button>
               </div>
             </form>

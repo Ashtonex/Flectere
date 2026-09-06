@@ -39,6 +39,7 @@ function revalidateCrm() {
   revalidatePath("/hub/invoices");
   revalidatePath("/hub/arms");
   revalidatePath("/hub/clients");
+  revalidatePath("/hub/leads");
 }
 
 export async function createBusinessArmAction(formData: FormData) {
@@ -110,23 +111,65 @@ export async function createActivityAction(formData: FormData) {
   const supabase = await createClient();
 
   const subject = String(formData.get("subject") || "").trim();
-  const activityDate = String(formData.get("activity_date") || "").trim();
-  if (!subject || !activityDate) return;
+  const activityDate = String(formData.get("activity_date") || "").trim() || new Date().toISOString().slice(0, 10);
+  if (!subject) return;
 
-  const businessArmId = await resolveArmId(supabase, nullableString(formData, "business_arm_id"));
+  const opportunityId = nullableString(formData, "opportunity_id");
+  let clientId = nullableString(formData, "client_id");
+  let businessArmId = await resolveArmId(supabase, nullableString(formData, "business_arm_id"));
+
+  // If client_id or business_arm_id not provided, infer from opportunity if available
+  if (opportunityId && (!clientId || !businessArmId)) {
+    const { data: opp } = await supabase
+      .from("crm_opportunities")
+      .select("client_id, business_arm_id")
+      .eq("id", opportunityId)
+      .maybeSingle();
+    if (opp) {
+      if (!clientId && opp.client_id) clientId = opp.client_id;
+      if (!businessArmId && opp.business_arm_id) businessArmId = opp.business_arm_id;
+    }
+  }
+
+  const rawOutcome = nullableString(formData, "outcome");
+  const callOutcome = nullableString(formData, "call_outcome");
+  const duration = nullableString(formData, "duration");
+  const notes = nullableString(formData, "notes");
+
+  // Construct structured outcome string with notes and call metadata
+  let finalOutcome = rawOutcome || "";
+  const parts: string[] = [];
+  if (callOutcome) parts.push(`Result: ${callOutcome}`);
+  if (duration) parts.push(`Duration: ${duration}`);
+  if (notes) parts.push(notes);
+
+  if (parts.length > 0) {
+    const structured = parts.join(" · ");
+    finalOutcome = finalOutcome ? `${finalOutcome}\n${structured}` : structured;
+  }
 
   await supabase.from("crm_activities").insert({
     subject,
     activity_date: activityDate,
     activity_type: String(formData.get("activity_type") || "note"),
-    client_id: nullableString(formData, "client_id"),
+    client_id: clientId,
     lead_id: nullableString(formData, "lead_id"),
-    opportunity_id: nullableString(formData, "opportunity_id"),
+    opportunity_id: opportunityId,
     business_arm_id: businessArmId,
-    outcome: nullableString(formData, "outcome"),
+    outcome: finalOutcome || null,
     next_step: nullableString(formData, "next_step"),
   });
 
+  revalidateCrm();
+}
+
+export async function deleteActivityAction(formData: FormData) {
+  const supabase = await createClient();
+
+  const id = String(formData.get("id") || "");
+  if (!id) return;
+
+  await supabase.from("crm_activities").delete().eq("id", id);
   revalidateCrm();
 }
 

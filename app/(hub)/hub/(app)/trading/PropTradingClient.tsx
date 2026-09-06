@@ -2,11 +2,15 @@
 
 import { useState, useMemo } from "react";
 import { formatCurrency, formatPercent } from "@/lib/hub/analytics";
-import type {
-  Expense,
-  PerformanceEntry,
-  TradingAccount,
-  Withdrawal,
+import {
+  parsePayoutAllocation,
+  formatPayoutAllocation,
+  type Expense,
+  type PerformanceEntry,
+  type TradingAccount,
+  type Withdrawal,
+  type PayoutAllocation,
+  type CapitalSource,
 } from "@/lib/hub/types";
 import {
   createPropAccountAction,
@@ -20,14 +24,19 @@ import {
   addDeskExpenseAction,
   deleteDeskExpenseAction,
   bulkImportPerformanceEntriesAction,
+  updatePropPayoutAllocationAction,
 } from "./actions";
 
 interface AccountStats {
   account: TradingAccount;
   isBlown: boolean;
+  capitalSource: string;
+  flectereSeededCost: number;
+  returnOnFlectereCapital: number | null;
   latestEquity: number;
   latestBalance: number;
   totalPayouts: number;
+
   totalFees: number;
   netPnl: number;
   netProfitCash: number;
@@ -95,6 +104,22 @@ export function PropTradingClient({
   const [isCsvImportOpen, setIsCsvImportOpen] = useState(false);
   const [editingAccount, setEditingAccount] = useState<TradingAccount | null>(null);
   const [editingEntry, setEditingEntry] = useState<PerformanceEntry | null>(null);
+  const [isAllocationsOpen, setIsAllocationsOpen] = useState(false);
+  const [editingPayout, setEditingPayout] = useState<Withdrawal | null>(null);
+  const [performanceView, setPerformanceView] = useState<"ledger" | "heatmap">("ledger");
+
+  // Payout Allocation input states (for record payout modal)
+  const [payoutAmount, setPayoutAmount] = useState<string>("5000");
+  const [allocTreasury, setAllocTreasury] = useState<number>(2000);
+  const [allocReinvestment, setAllocReinvestment] = useState<number>(1000);
+  const [allocFounder, setAllocFounder] = useState<number>(1500);
+  const [allocTax, setAllocTax] = useState<number>(500);
+
+  // Edit payout allocation state
+  const [editAllocTreasury, setEditAllocTreasury] = useState<number>(0);
+  const [editAllocReinvestment, setEditAllocReinvestment] = useState<number>(0);
+  const [editAllocFounder, setEditAllocFounder] = useState<number>(0);
+  const [editAllocTax, setEditAllocTax] = useState<number>(0);
 
   // Position Sizing Calculator state
   const [sizerAsset, setSizerAsset] = useState<"forex" | "gold" | "indices" | "crypto">("forex");
@@ -122,6 +147,7 @@ export function PropTradingClient({
   } | null>(null);
 
   const today = new Date().toISOString().slice(0, 10);
+
 
   // Compute stats for each individual account
   const accountStats: AccountStats[] = useMemo(() => {
@@ -216,12 +242,28 @@ export function PropTradingClient({
       const avgWin = winCount > 0 ? totalGains / winCount : 0;
       const avgLoss = lossCount > 0 ? totalLosses / lossCount : 0;
 
+      // Capital source lineage and ROI on corporate funds
+      const seedExpense = expenses.find(
+        (e) =>
+          e.account_id === account.id &&
+          (e.notes?.includes("CAPITAL_SOURCE:") || e.category === "prop_fee")
+      );
+      const sourceMatch = seedExpense?.notes?.match(/\[CAPITAL_SOURCE:(.*?)\]/);
+      const capitalSource = (sourceMatch && sourceMatch[1]) || "flectere_treasury";
+      const flectereSeededCost = Number(seedExpense?.amount ?? account.challenge_cost ?? 0);
+      const returnOnFlectereCapital =
+        flectereSeededCost > 0 ? accPayouts / flectereSeededCost : null;
+
       return {
         account,
         isBlown,
+        capitalSource,
+        flectereSeededCost,
+        returnOnFlectereCapital,
         latestEquity,
         latestBalance,
         totalPayouts: accPayouts,
+
         totalFees,
         netPnl,
         netProfitCash,
@@ -340,6 +382,122 @@ export function PropTradingClient({
     });
     return Array.from(map.values()).sort((a, b) => b.totalCapital - a.totalCapital);
   }, [accountStats]);
+
+  // Cumulative Desk Payout Allocations across Treasury, Reinvestment, Founder, Tax
+  const deskAllocations = useMemo(() => {
+    let treasury = 0;
+    let reinvestment = 0;
+    let founder_draw = 0;
+    let tax_reserve = 0;
+
+    withdrawals.forEach((w) => {
+      const { allocation } = parsePayoutAllocation(w.notes);
+      const amt = Number(w.amount);
+      const hasAlloc =
+        allocation.treasury > 0 ||
+        allocation.reinvestment > 0 ||
+        allocation.founder_draw > 0 ||
+        allocation.tax_reserve > 0;
+
+      if (hasAlloc) {
+        treasury += allocation.treasury;
+        reinvestment += allocation.reinvestment;
+        founder_draw += allocation.founder_draw;
+        tax_reserve += allocation.tax_reserve;
+      } else {
+        // Default split: 40% Treasury, 20% Reinvestment, 30% Founder, 10% Tax Reserve
+        treasury += amt * 0.4;
+        reinvestment += amt * 0.2;
+        founder_draw += amt * 0.3;
+        tax_reserve += amt * 0.1;
+      }
+    });
+
+    return { treasury, reinvestment, founder_draw, tax_reserve };
+  }, [withdrawals]);
+
+  // Monthly Calendar Heatmap data
+  const calendarData = useMemo(() => {
+    if (!selectedAccount) return null;
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth(); // 0-indexed
+
+    const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+    const monthName = now.toLocaleString("default", { month: "long" });
+
+    // Map entries by date YYYY-MM-DD
+    const entryMap = new Map<string, PerformanceEntry>();
+    selectedEntries.forEach((e) => {
+      entryMap.set(e.entry_date, e);
+    });
+
+    // Build all days of month
+    const days: { dayNumber: number; dateStr: string; entry: PerformanceEntry | null; dayOfWeek: number }[] = [];
+    for (let day = 1; day <= daysInMonth; day++) {
+      const dateStr = `${currentYear}-${String(currentMonth + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+      const d = new Date(currentYear, currentMonth, day);
+      // 0 = Mon, 6 = Sun
+      const dayOfWeek = (d.getDay() + 6) % 7;
+      days.push({
+        dayNumber: day,
+        dateStr,
+        entry: entryMap.get(dateStr) ?? null,
+        dayOfWeek,
+      });
+    }
+
+    // Group into 7-day rows (Mon to Sun)
+    const weeks: typeof days[] = [];
+    let currentWeek: typeof days = [];
+
+    // Prepend blank padding for days before day 1
+    const firstDayOfWeek = days[0]?.dayOfWeek ?? 0;
+    for (let i = 0; i < firstDayOfWeek; i++) {
+      currentWeek.push({ dayNumber: 0, dateStr: "", entry: null, dayOfWeek: i });
+    }
+
+    days.forEach((dayItem) => {
+      currentWeek.push(dayItem);
+      if (currentWeek.length === 7) {
+        weeks.push(currentWeek);
+        currentWeek = [];
+      }
+    });
+
+    if (currentWeek.length > 0) {
+      while (currentWeek.length < 7) {
+        currentWeek.push({ dayNumber: 0, dateStr: "", entry: null, dayOfWeek: currentWeek.length });
+      }
+      weeks.push(currentWeek);
+    }
+
+    // Month performance metrics
+    const monthPrefix = `${currentYear}-${String(currentMonth + 1).padStart(2, "0")}`;
+    const monthEntries = selectedEntries.filter((e) => e.entry_date.startsWith(monthPrefix));
+    const monthPnl = monthEntries.reduce((sum, e) => sum + Number(e.pnl ?? 0), 0);
+    const winDays = monthEntries.filter((e) => Number(e.pnl ?? 0) > 0).length;
+    const lossDays = monthEntries.filter((e) => Number(e.pnl ?? 0) < 0).length;
+    const totalTradingDays = monthEntries.length;
+    const winRate = totalTradingDays > 0 ? (winDays / totalTradingDays) * 100 : 0;
+
+    return {
+      currentMonthName: `${monthName} ${currentYear}`,
+      monthName,
+      currentYear,
+      weeks,
+      monthPnl,
+      totalMonthPnl: monthPnl,
+      winDays,
+      lossDays,
+      totalTradingDays,
+      winRate,
+      monthWins: winDays,
+      monthTotalSessions: totalTradingDays,
+      monthWinRate: winRate,
+    };
+  }, [selectedAccount, selectedEntries]);
+
 
 
   // SVG Chart calculation
@@ -516,15 +674,22 @@ export function PropTradingClient({
         <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
           <div className="flex justify-between items-start">
             <p className="text-xs uppercase tracking-widest2 text-fog-500 font-bold">Prop Firm Payouts</p>
-            <span className="text-[10px] bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 rounded font-mono font-bold">
-              Realized
-            </span>
+            <button
+              onClick={() => setIsAllocationsOpen(true)}
+              className="text-[10px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 hover:bg-emerald-500/30 px-2 py-0.5 rounded font-mono font-bold cursor-pointer transition"
+            >
+              Capital Allocation →
+            </button>
           </div>
           <p className="mt-2 font-display text-2xl text-emerald-400 font-mono font-bold">
             {formatCurrency(totalDeskPayouts)}
           </p>
-          <p className="text-[10px] text-fog-500 mt-1 font-mono">Cumulative cash disbursements</p>
+          <div className="mt-1 flex items-center justify-between text-[10px] text-fog-500 font-mono">
+            <span>Treasury: {formatCurrency(deskAllocations.treasury)}</span>
+            <span>Reinvest: {formatCurrency(deskAllocations.reinvestment)}</span>
+          </div>
         </div>
+
 
         <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
           <p className="text-xs uppercase tracking-widest2 text-fog-500 font-bold">Challenge Fees Spent</p>
@@ -741,6 +906,12 @@ export function PropTradingClient({
                       FEE REFUNDED
                     </span>
                   )}
+                  <span className="rounded bg-white/5 border border-white/10 px-2 py-0.5 text-[10px] font-mono text-fog-200 flex items-center gap-1">
+                    {selectedStats.capitalSource === "flectere_treasury" && "🏛️ Flectēre Treasury"}
+                    {selectedStats.capitalSource === "flectere_cashflow" && "📈 Flectēre Cashflow"}
+                    {selectedStats.capitalSource === "desk_reinvestment" && "🔄 Desk Reinvestment"}
+                    {selectedStats.capitalSource === "personal_capital" && "👤 Personal Capital"}
+                  </span>
                 </div>
 
                 <h2 className="font-display text-2xl text-fog-100 mt-1 font-bold">
@@ -797,6 +968,48 @@ export function PropTradingClient({
                 </button>
               </div>
             </div>
+
+            {/* Capital Source & Lineage Audit Trail Box */}
+            <div className="rounded-xl border border-white/10 bg-black/30 p-4 space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-2 text-xs border-b border-white/5 pb-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-fog-500 uppercase text-[10px] font-bold tracking-wider">
+                    Capital Origin &amp; Lineage Audit
+                  </span>
+                  <span className="text-gold font-mono font-bold">
+                    {selectedStats.capitalSource === "flectere_treasury"
+                      ? "🏛️ Flectēre Corporate Treasury (Retained Earnings)"
+                      : selectedStats.capitalSource === "flectere_cashflow"
+                      ? "📈 Flectēre Advisory & Diagnostic Revenue"
+                      : selectedStats.capitalSource === "desk_reinvestment"
+                      ? "🔄 Prop Desk Reinvestment Pool (Prior Payouts)"
+                      : "👤 Founder Personal Capital"}
+                  </span>
+                </div>
+                <span className="text-[11px] font-mono text-fog-400">
+                  Initial Allocation: <strong className="text-white">{formatCurrency(selectedStats.flectereSeededCost)}</strong>
+                </span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs font-mono pt-1">
+                <div>
+                  <span className="text-fog-500 text-[10px] block">Capital Deployed</span>
+                  <span className="text-white font-bold">{formatCurrency(selectedStats.flectereSeededCost)}</span>
+                </div>
+                <div>
+                  <span className="text-fog-500 text-[10px] block">Cash Extracted Back</span>
+                  <span className="text-emerald-400 font-bold">{formatCurrency(selectedStats.totalPayouts)}</span>
+                </div>
+                <div>
+                  <span className="text-fog-500 text-[10px] block">Corporate Return Multiple</span>
+                  <span className="text-gold font-bold">
+                    {selectedStats.returnOnFlectereCapital !== null
+                      ? `${selectedStats.returnOnFlectereCapital.toFixed(1)}x (+${((selectedStats.returnOnFlectereCapital - 1) * 100).toFixed(0)}% ROI)`
+                      : "—"}
+                  </span>
+                </div>
+              </div>
+            </div>
+
 
             {/* Prop Rule Breaker Sentinel Status Banner */}
             {selectedStats.isBlown ? (
@@ -1240,89 +1453,297 @@ export function PropTradingClient({
             {/* TAB 1: PERFORMANCE JOURNAL */}
             {activeTab === "performance" && (
               <div className="space-y-4">
-                <div className="overflow-x-auto rounded-xl border border-white/10">
-                  <table className="w-full text-left text-sm">
-                    <thead className="border-b border-white/10 text-xs uppercase tracking-widest2 text-fog-500 bg-white/[0.01]">
-                      <tr>
-                        <th className="px-4 py-3">Date</th>
-                        <th className="px-4 py-3">Balance</th>
-                        <th className="px-4 py-3">Equity</th>
-                        <th className="px-4 py-3">Day P&amp;L</th>
-                        <th className="px-4 py-3">Strategy / Notes</th>
-                        <th className="px-4 py-3 text-right">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-white/5 font-mono text-xs">
-                      {selectedEntries.map((entry) => {
-                        const pnlVal = Number(entry.pnl ?? 0);
-                        return (
-                          <tr key={entry.id} className="hover:bg-white/[0.02] transition">
-                            <td className="px-4 py-3 text-fog-200 font-medium whitespace-nowrap">
-                              {entry.entry_date}
-                            </td>
-                            <td className="px-4 py-3 text-fog-300">
-                              {entry.balance !== null ? formatCurrency(entry.balance) : "—"}
-                            </td>
-                            <td className="px-4 py-3 text-fog-100 font-bold">
-                              {entry.equity !== null ? formatCurrency(entry.equity) : "—"}
-                            </td>
-                            <td className="px-4 py-3">
-                              {entry.pnl !== null ? (
-                                <span
-                                  className={`inline-block px-2 py-0.5 rounded font-bold ${
-                                    pnlVal > 0
-                                      ? "bg-emerald-500/20 text-emerald-400"
-                                      : pnlVal < 0
-                                      ? "bg-rose-500/20 text-rose-400"
-                                      : "text-fog-500"
-                                  }`}
-                                >
-                                  {pnlVal > 0 ? "+" : ""}
-                                  {formatCurrency(pnlVal)}
-                                </span>
-                              ) : (
-                                "—"
-                              )}
-                            </td>
-                            <td className="px-4 py-3 text-fog-400 font-sans max-w-xs truncate">
-                              {entry.notes ?? "—"}
-                            </td>
-                            <td className="px-4 py-3 text-right whitespace-nowrap">
-                              <div className="flex items-center justify-end gap-2 font-sans">
-                                <button
-                                  onClick={() => setEditingEntry(entry)}
-                                  className="text-[11px] text-fog-400 hover:text-white transition cursor-pointer"
-                                >
-                                  Edit
-                                </button>
-                                <form action={deletePerformanceEntryAction}>
-                                  <input type="hidden" name="id" value={entry.id} />
-                                  <button
-                                    type="submit"
-                                    onClick={(e) => {
-                                      if (!confirm("Delete this performance entry?")) e.preventDefault();
-                                    }}
-                                    className="text-[11px] text-rose-400 hover:text-rose-300 transition cursor-pointer"
+                {/* View Switcher Bar */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setPerformanceView("ledger")}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer flex items-center gap-1.5 ${
+                        performanceView === "ledger"
+                          ? "bg-gold/15 text-gold border border-gold/40 shadow-sm"
+                          : "text-fog-400 hover:text-white border border-transparent"
+                      }`}
+                    >
+                      <span>☰</span> Ledger Table
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPerformanceView("heatmap")}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer flex items-center gap-1.5 ${
+                        performanceView === "heatmap"
+                          ? "bg-gold/15 text-gold border border-gold/40 shadow-sm"
+                          : "text-fog-400 hover:text-white border border-transparent"
+                      }`}
+                    >
+                      <span>📅</span> Monthly Heatmap
+                    </button>
+                  </div>
+
+                  {performanceView === "heatmap" && calendarData && calendarData.totalTradingDays > 0 && (
+                    <div className="hidden sm:flex items-center gap-4 text-xs font-mono">
+                      <span className="text-fog-400">
+                        Days Traded: <strong className="text-fog-200">{calendarData.totalTradingDays}</strong>
+                      </span>
+                      <span className="text-fog-400">
+                        Month Win Rate:{" "}
+                        <strong className={calendarData.winRate >= 50 ? "text-emerald-400" : "text-rose-400"}>
+                          {calendarData.winRate.toFixed(1)}%
+                        </strong>
+                      </span>
+                      <span className="text-fog-400">
+                        Month Net P&L:{" "}
+                        <strong className={calendarData.totalMonthPnl >= 0 ? "text-emerald-400 font-bold" : "text-rose-400 font-bold"}>
+                          {calendarData.totalMonthPnl >= 0 ? "+" : ""}
+                          {formatCurrency(calendarData.totalMonthPnl)}
+                        </strong>
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {/* VIEW A: LEDGER TABLE */}
+                {performanceView === "ledger" && (
+                  <div className="overflow-x-auto rounded-xl border border-white/10">
+                    <table className="w-full text-left text-sm">
+                      <thead className="border-b border-white/10 text-xs uppercase tracking-widest2 text-fog-500 bg-white/[0.01]">
+                        <tr>
+                          <th className="px-4 py-3">Date</th>
+                          <th className="px-4 py-3">Balance</th>
+                          <th className="px-4 py-3">Equity</th>
+                          <th className="px-4 py-3">Day P&amp;L</th>
+                          <th className="px-4 py-3">Strategy / Notes</th>
+                          <th className="px-4 py-3 text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-white/5 font-mono text-xs">
+                        {selectedEntries.map((entry) => {
+                          const pnlVal = Number(entry.pnl ?? 0);
+                          return (
+                            <tr key={entry.id} className="hover:bg-white/[0.02] transition">
+                              <td className="px-4 py-3 text-fog-200 font-medium whitespace-nowrap">
+                                {entry.entry_date}
+                              </td>
+                              <td className="px-4 py-3 text-fog-300">
+                                {entry.balance ? formatCurrency(Number(entry.balance)) : "—"}
+                              </td>
+                              <td className="px-4 py-3 text-fog-100 font-bold">
+                                {entry.equity ? formatCurrency(Number(entry.equity)) : "—"}
+                              </td>
+                              <td className="px-4 py-3 whitespace-nowrap">
+                                {entry.pnl !== null && entry.pnl !== undefined ? (
+                                  <span
+                                    className={`font-bold ${
+                                      pnlVal > 0
+                                        ? "text-emerald-400"
+                                        : pnlVal < 0
+                                        ? "text-rose-400"
+                                        : "text-fog-500"
+                                    }`}
                                   >
-                                    Delete
+                                    {pnlVal > 0 ? "+" : ""}
+                                    {formatCurrency(pnlVal)}
+                                  </span>
+                                ) : (
+                                  "—"
+                                )}
+                              </td>
+                              <td className="px-4 py-3 text-fog-400 font-sans max-w-xs truncate">
+                                {entry.notes ?? "—"}
+                              </td>
+                              <td className="px-4 py-3 text-right whitespace-nowrap">
+                                <div className="flex items-center justify-end gap-2 font-sans">
+                                  <button
+                                    onClick={() => setEditingEntry(entry)}
+                                    className="text-[11px] text-fog-400 hover:text-white transition cursor-pointer"
+                                  >
+                                    Edit
                                   </button>
-                                </form>
-                              </div>
+                                  <form action={deletePerformanceEntryAction}>
+                                    <input type="hidden" name="id" value={entry.id} />
+                                    <button
+                                      type="submit"
+                                      onClick={(e) => {
+                                        if (!confirm("Delete this performance entry?")) e.preventDefault();
+                                      }}
+                                      className="text-[11px] text-rose-400 hover:text-rose-300 transition cursor-pointer"
+                                    >
+                                      Delete
+                                    </button>
+                                  </form>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+
+                        {selectedEntries.length === 0 && (
+                          <tr>
+                            <td colSpan={6} className="px-4 py-8 text-center text-fog-600 font-sans">
+                              No performance entries logged yet. Click &quot;⚡ Quick Day Log&quot; to log your first trade day.
                             </td>
                           </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {/* VIEW B: MONTHLY HEATMAP CALENDAR */}
+                {performanceView === "heatmap" && calendarData && (
+                  <div className="rounded-xl border border-white/10 bg-black/40 p-4 sm:p-6 space-y-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-white/10 pb-3">
+                      <div>
+                        <h4 className="font-display text-base font-bold text-fog-100 flex items-center gap-2">
+                          <span>📅 Trading P&amp;L Heatmap</span>
+                          <span className="text-xs font-mono font-normal text-gold px-2 py-0.5 rounded bg-gold/10 border border-gold/30">
+                            {calendarData.currentMonthName}
+                          </span>
+                        </h4>
+                        <p className="text-xs text-fog-400 mt-0.5">
+                          Daily performance breakdown with win rate, green/red days, and weekly sub-totals.
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-3 text-xs">
+                        <div className="flex items-center gap-1.5">
+                          <span className="w-3 h-3 rounded bg-emerald-500/20 border border-emerald-500/40" />
+                          <span className="text-fog-300">Profit Day ({calendarData.winDays})</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="w-3 h-3 rounded bg-rose-500/20 border border-rose-500/40" />
+                          <span className="text-fog-300">Drawdown Day ({calendarData.lossDays})</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Day-of-week headers */}
+                    <div className="grid grid-cols-7 gap-2 text-center text-[11px] font-bold uppercase tracking-wider text-fog-500">
+                      <div>Mon</div>
+                      <div>Tue</div>
+                      <div>Wed</div>
+                      <div>Thu</div>
+                      <div>Fri</div>
+                      <div className="text-fog-600">Sat</div>
+                      <div className="text-fog-600">Sun</div>
+                    </div>
+
+                    {/* Weeks grid */}
+                    <div className="space-y-2">
+                      {calendarData.weeks.map((week, wIdx) => {
+                        const weekPnl = week.reduce(
+                          (acc, d) => acc + (d.entry ? Number(d.entry.pnl ?? 0) : 0),
+                          0
+                        );
+                        const hasTrades = week.some((d) => d.entry !== null);
+
+                        return (
+                          <div key={wIdx} className="space-y-1">
+                            <div className="grid grid-cols-7 gap-2">
+                              {week.map((day, dIdx) => {
+                                if (day.dayNumber === 0) {
+                                  return (
+                                    <div
+                                      key={dIdx}
+                                      className="min-h-[74px] rounded-lg border border-white/[0.03] bg-white/[0.01] opacity-25 p-2"
+                                    />
+                                  );
+                                }
+
+                                const entry = day.entry;
+                                const pnl = entry ? Number(entry.pnl ?? 0) : null;
+                                const isWin = pnl !== null && pnl > 0;
+                                const isLoss = pnl !== null && pnl < 0;
+                                const isBreakeven = pnl !== null && pnl === 0;
+
+                                return (
+                                  <div
+                                    key={dIdx}
+                                    onClick={() => {
+                                      if (entry) {
+                                        setEditingEntry(entry);
+                                      } else if (selectedAccount) {
+                                        setIsQuickLogOpen(true);
+                                      }
+                                    }}
+                                    className={`min-h-[74px] rounded-lg border p-2 transition cursor-pointer flex flex-col justify-between ${
+                                      isWin
+                                        ? "border-emerald-500/40 bg-emerald-950/20 hover:bg-emerald-950/40 shadow-sm shadow-emerald-500/5"
+                                        : isLoss
+                                        ? "border-rose-500/40 bg-rose-950/20 hover:bg-rose-950/40 shadow-sm shadow-rose-500/5"
+                                        : isBreakeven
+                                        ? "border-fog-500/30 bg-fog-950/20 hover:bg-fog-950/40"
+                                        : "border-white/5 bg-white/[0.015] hover:bg-white/[0.04]"
+                                    }`}
+                                  >
+                                    <div className="flex items-center justify-between text-[11px]">
+                                      <span
+                                        className={`font-mono font-medium ${
+                                          entry ? "text-fog-200 font-bold" : "text-fog-600"
+                                        }`}
+                                      >
+                                        {day.dayNumber}
+                                      </span>
+                                      {entry && (
+                                        <span className="text-[9px] uppercase px-1 py-0.2 rounded bg-white/5 text-fog-400">
+                                          Logged
+                                        </span>
+                                      )}
+                                    </div>
+
+                                    <div className="font-mono text-right">
+                                      {pnl !== null ? (
+                                        <div>
+                                          <div
+                                            className={`text-xs font-bold leading-tight ${
+                                              isWin
+                                                ? "text-emerald-400"
+                                                : isLoss
+                                                ? "text-rose-400"
+                                                : "text-fog-300"
+                                            }`}
+                                          >
+                                            {pnl > 0 ? "+" : ""}
+                                            {formatCurrency(pnl)}
+                                          </div>
+                                          {entry?.notes && (
+                                            <div className="text-[9px] text-fog-500 truncate max-w-[80px] font-sans mt-0.5">
+                                              {entry.notes}
+                                            </div>
+                                          )}
+                                        </div>
+                                      ) : (
+                                        <span className="text-[10px] text-fog-700 select-none">—</span>
+                                      )}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+
+                            {/* Weekly subtotal strip */}
+                            {hasTrades && (
+                              <div className="flex justify-end items-center gap-2 px-2 py-0.5 text-[11px] font-mono text-fog-400">
+                                <span>Week #{wIdx + 1} Net:</span>
+                                <span
+                                  className={`font-bold ${
+                                    weekPnl > 0
+                                      ? "text-emerald-400"
+                                      : weekPnl < 0
+                                      ? "text-rose-400"
+                                      : "text-fog-400"
+                                  }`}
+                                >
+                                  {weekPnl > 0 ? "+" : ""}
+                                  {formatCurrency(weekPnl)}
+                                </span>
+                              </div>
+                            )}
+                          </div>
                         );
                       })}
-
-                      {selectedEntries.length === 0 && (
-                        <tr>
-                          <td colSpan={6} className="px-4 py-8 text-center text-fog-600 font-sans">
-                            No performance entries logged yet. Click &quot;⚡ Quick Day Log&quot; to log your first trade day.
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -1442,38 +1863,107 @@ export function PropTradingClient({
                       <tr>
                         <th className="px-4 py-3">Disbursement Date</th>
                         <th className="px-4 py-3">Amount</th>
+                        <th className="px-4 py-3">Capital Allocation Breakdown</th>
                         <th className="px-4 py-3">Wire / Notes</th>
                         <th className="px-4 py-3 text-right">Actions</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-white/5 font-mono text-xs">
-                      {selectedPayouts.map((w) => (
-                        <tr key={w.id} className="hover:bg-white/[0.02] transition">
-                          <td className="px-4 py-3 text-fog-200">{w.withdrawn_on}</td>
-                          <td className="px-4 py-3 text-emerald-400 font-bold">
-                            {formatCurrency(Number(w.amount))}
-                          </td>
-                          <td className="px-4 py-3 text-fog-400 font-sans">{w.notes ?? "—"}</td>
-                          <td className="px-4 py-3 text-right font-sans">
-                            <form action={deletePropPayoutAction}>
-                              <input type="hidden" name="id" value={w.id} />
-                              <button
-                                type="submit"
-                                onClick={(e) => {
-                                  if (!confirm("Delete this payout record?")) e.preventDefault();
-                                }}
-                                className="text-[11px] text-rose-400 hover:text-rose-300 transition cursor-pointer"
-                              >
-                                Delete
-                              </button>
-                            </form>
-                          </td>
-                        </tr>
-                      ))}
+                      {selectedPayouts.map((w) => {
+                        const { allocation, cleanNotes } = parsePayoutAllocation(w.notes);
+                        const hasAlloc =
+                          allocation.treasury > 0 ||
+                          allocation.reinvestment > 0 ||
+                          allocation.founder_draw > 0 ||
+                          allocation.tax_reserve > 0;
+
+                        return (
+                          <tr key={w.id} className="hover:bg-white/[0.02] transition">
+                            <td className="px-4 py-3 text-fog-200 whitespace-nowrap">{w.withdrawn_on}</td>
+                            <td className="px-4 py-3 text-emerald-400 font-bold whitespace-nowrap">
+                              {formatCurrency(Number(w.amount))}
+                            </td>
+                            <td className="px-4 py-3 font-sans">
+                              {hasAlloc ? (
+                                <div className="flex flex-wrap gap-1.5 items-center">
+                                  {allocation.treasury > 0 && (
+                                    <span className="inline-flex items-center gap-1 rounded bg-amber-500/10 border border-amber-500/30 px-1.5 py-0.5 text-[10px] text-amber-300 font-mono">
+                                      <span>🏛️</span>
+                                      {formatCurrency(allocation.treasury)}
+                                    </span>
+                                  )}
+                                  {allocation.reinvestment > 0 && (
+                                    <span className="inline-flex items-center gap-1 rounded bg-sky-500/10 border border-sky-500/30 px-1.5 py-0.5 text-[10px] text-sky-300 font-mono">
+                                      <span>🔄</span>
+                                      {formatCurrency(allocation.reinvestment)}
+                                    </span>
+                                  )}
+                                  {allocation.founder_draw > 0 && (
+                                    <span className="inline-flex items-center gap-1 rounded bg-emerald-500/10 border border-emerald-500/30 px-1.5 py-0.5 text-[10px] text-emerald-300 font-mono">
+                                      <span>👤</span>
+                                      {formatCurrency(allocation.founder_draw)}
+                                    </span>
+                                  )}
+                                  {allocation.tax_reserve > 0 && (
+                                    <span className="inline-flex items-center gap-1 rounded bg-purple-500/10 border border-purple-500/30 px-1.5 py-0.5 text-[10px] text-purple-300 font-mono">
+                                      <span>🛡️</span>
+                                      {formatCurrency(allocation.tax_reserve)}
+                                    </span>
+                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={() => setEditingPayout(w)}
+                                    className="text-[10px] text-fog-400 hover:text-gold transition cursor-pointer ml-1 underline underline-offset-2"
+                                  >
+                                    Adjust
+                                  </button>
+                                </div>
+                              ) : (
+                                <div className="flex items-center gap-2 font-mono text-[11px] text-fog-500">
+                                  <span>Unallocated</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => setEditingPayout(w)}
+                                    className="rounded bg-white/5 border border-white/10 px-2 py-0.5 text-[10px] text-gold hover:bg-gold/10 transition cursor-pointer font-sans"
+                                  >
+                                    Allocate Funds
+                                  </button>
+                                </div>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-fog-400 font-sans max-w-xs truncate">
+                              {cleanNotes || "—"}
+                            </td>
+                            <td className="px-4 py-3 text-right font-sans whitespace-nowrap">
+                              <div className="flex items-center justify-end gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingPayout(w)}
+                                  className="text-[11px] text-fog-400 hover:text-white transition cursor-pointer"
+                                >
+                                  Edit Allocations
+                                </button>
+                                <form action={deletePropPayoutAction}>
+                                  <input type="hidden" name="id" value={w.id} />
+                                  <button
+                                    type="submit"
+                                    onClick={(e) => {
+                                      if (!confirm("Delete this payout record?")) e.preventDefault();
+                                    }}
+                                    className="text-[11px] text-rose-400 hover:text-rose-300 transition cursor-pointer"
+                                  >
+                                    Delete
+                                  </button>
+                                </form>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
 
                       {selectedPayouts.length === 0 && (
                         <tr>
-                          <td colSpan={4} className="px-4 py-8 text-center text-fog-600 font-sans">
+                          <td colSpan={5} className="px-4 py-8 text-center text-fog-600 font-sans">
                             No payouts recorded yet. Log payouts once the prop firm approves and wires your profit split.
                           </td>
                         </tr>
@@ -2239,6 +2729,129 @@ export function PropTradingClient({
                 />
               </div>
 
+              {/* Capital Allocation Distribution Inputs */}
+              <div className="rounded-xl border border-gold/20 bg-gold/[0.02] p-3.5 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h4 className="text-xs font-bold text-gold flex items-center gap-1.5">
+                      <span>⚖️</span> Payout Capital Allocation
+                    </h4>
+                    <p className="text-[11px] text-fog-400">
+                      Distribute this extraction across treasury, reinvestment, dividends, and tax.
+                    </p>
+                  </div>
+                  <div className="flex gap-1 text-[10px]">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const amt = allocTreasury + allocReinvestment + allocFounder + allocTax;
+                        if (amt > 0) {
+                          setAllocTreasury(Math.round(amt * 0.4));
+                          setAllocReinvestment(Math.round(amt * 0.2));
+                          setAllocFounder(Math.round(amt * 0.3));
+                          setAllocTax(amt - Math.round(amt * 0.4) - Math.round(amt * 0.2) - Math.round(amt * 0.3));
+                        }
+                      }}
+                      className="px-1.5 py-0.5 rounded bg-white/5 hover:bg-white/10 text-fog-300 transition"
+                    >
+                      40/20/30/10
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const amt = allocTreasury + allocReinvestment + allocFounder + allocTax;
+                        if (amt > 0) {
+                          setAllocTreasury(Math.round(amt * 0.5));
+                          setAllocReinvestment(0);
+                          setAllocFounder(amt - Math.round(amt * 0.5));
+                          setAllocTax(0);
+                        }
+                      }}
+                      className="px-1.5 py-0.5 rounded bg-white/5 hover:bg-white/10 text-fog-300 transition"
+                    >
+                      50/50
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const amt = allocTreasury + allocReinvestment + allocFounder + allocTax;
+                        if (amt > 0) {
+                          setAllocTreasury(amt);
+                          setAllocReinvestment(0);
+                          setAllocFounder(0);
+                          setAllocTax(0);
+                        }
+                      }}
+                      className="px-1.5 py-0.5 rounded bg-white/5 hover:bg-white/10 text-fog-300 transition"
+                    >
+                      100% Corp
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2.5 text-xs">
+                  <div>
+                    <label className="text-[11px] text-amber-300 font-medium block mb-1">
+                      🏛️ Corporate Treasury ($)
+                    </label>
+                    <input
+                      name="alloc_treasury"
+                      type="number"
+                      step="0.01"
+                      value={allocTreasury}
+                      onChange={(e) => setAllocTreasury(Number(e.target.value))}
+                      className={inputClasses}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[11px] text-sky-300 font-medium block mb-1">
+                      🔄 Desk Reinvestment ($)
+                    </label>
+                    <input
+                      name="alloc_reinvestment"
+                      type="number"
+                      step="0.01"
+                      value={allocReinvestment}
+                      onChange={(e) => setAllocReinvestment(Number(e.target.value))}
+                      className={inputClasses}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[11px] text-emerald-300 font-medium block mb-1">
+                      👤 Founder Dividends ($)
+                    </label>
+                    <input
+                      name="alloc_founder"
+                      type="number"
+                      step="0.01"
+                      value={allocFounder}
+                      onChange={(e) => setAllocFounder(Number(e.target.value))}
+                      className={inputClasses}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[11px] text-purple-300 font-medium block mb-1">
+                      🛡️ Tax &amp; Reserve ($)
+                    </label>
+                    <input
+                      name="alloc_tax"
+                      type="number"
+                      step="0.01"
+                      value={allocTax}
+                      onChange={(e) => setAllocTax(Number(e.target.value))}
+                      className={inputClasses}
+                    />
+                  </div>
+                </div>
+
+                <div className="flex justify-between items-center text-[11px] font-mono text-fog-400 border-t border-white/5 pt-2">
+                  <span>Sum Allocated:</span>
+                  <strong className="text-gold">
+                    {formatCurrency(allocTreasury + allocReinvestment + allocFounder + allocTax)}
+                  </strong>
+                </div>
+              </div>
+
               <div>
                 <label className={labelClasses}>Reference Notes / Wire Info</label>
                 <input
@@ -2443,18 +3056,28 @@ export function PropTradingClient({
                     className={inputClasses}
                   />
                 </div>
-                <div className="flex items-center pt-6 gap-2">
-                  <input
-                    type="checkbox"
-                    id="fee_refunded"
-                    name="fee_refunded"
-                    value="true"
-                    className="rounded border-white/20 text-gold focus:ring-gold"
-                  />
-                  <label htmlFor="fee_refunded" className="text-xs text-fog-300">
-                    Challenge fee refunded
-                  </label>
+                <div>
+                  <label className={labelClasses}>Capital Funding Source</label>
+                  <select name="capital_source" defaultValue="flectere_treasury" className={inputClasses}>
+                    <option value="flectere_treasury">🏛️ Flectēre Corporate Treasury</option>
+                    <option value="flectere_cashflow">💼 Advisory / Client Cashflow</option>
+                    <option value="desk_reinvestment">🔄 Desk Reinvestment Fund</option>
+                    <option value="personal_capital">👤 Personal Capital</option>
+                  </select>
                 </div>
+              </div>
+
+              <div className="flex items-center gap-2 pt-1">
+                <input
+                  type="checkbox"
+                  id="fee_refunded"
+                  name="fee_refunded"
+                  value="true"
+                  className="rounded border-white/20 text-gold focus:ring-gold"
+                />
+                <label htmlFor="fee_refunded" className="text-xs text-fog-300">
+                  Challenge fee already refunded by prop firm
+                </label>
               </div>
 
               <div className="flex justify-end gap-3 pt-2">
@@ -2617,6 +3240,381 @@ export function PropTradingClient({
                     Save Changes
                   </button>
                 </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 11: CAPITAL DISTRIBUTION ALLOCATION LEDGER */}
+      {isAllocationsOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div className="w-full max-w-2xl rounded-2xl border border-gold/40 bg-ink-950 p-6 space-y-5 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-white/10 pb-3">
+              <div>
+                <h3 className="font-display text-lg font-bold text-fog-100 flex items-center gap-2">
+                  <span>⚖️</span> Capital Allocation &amp; Distribution Ledger
+                </h3>
+                <p className="text-xs text-fog-400">
+                  Global breakdown of extracted proprietary trading payouts across designated enterprise pools.
+                </p>
+              </div>
+              <button
+                onClick={() => setIsAllocationsOpen(false)}
+                className="text-fog-400 hover:text-white transition cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Top Aggregate Summary Cards */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 font-mono">
+              <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3">
+                <span className="text-[10px] uppercase text-amber-400 font-bold block">🏛️ Treasury</span>
+                <p className="text-lg font-bold text-amber-300 mt-1">
+                  {formatCurrency(deskAllocations.treasury)}
+                </p>
+                <span className="text-[10px] text-fog-400">
+                  {totalDeskPayouts > 0
+                    ? ((deskAllocations.treasury / totalDeskPayouts) * 100).toFixed(1)
+                    : 0}
+                  % of total
+                </span>
+              </div>
+
+              <div className="rounded-xl border border-sky-500/30 bg-sky-500/10 p-3">
+                <span className="text-[10px] uppercase text-sky-400 font-bold block">🔄 Reinvestment</span>
+                <p className="text-lg font-bold text-sky-300 mt-1">
+                  {formatCurrency(deskAllocations.reinvestment)}
+                </p>
+                <span className="text-[10px] text-fog-400">
+                  {totalDeskPayouts > 0
+                    ? ((deskAllocations.reinvestment / totalDeskPayouts) * 100).toFixed(1)
+                    : 0}
+                  % of total
+                </span>
+              </div>
+
+              <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3">
+                <span className="text-[10px] uppercase text-emerald-400 font-bold block">👤 Founder Draw</span>
+                <p className="text-lg font-bold text-emerald-300 mt-1">
+                  {formatCurrency(deskAllocations.founder_draw)}
+                </p>
+                <span className="text-[10px] text-fog-400">
+                  {totalDeskPayouts > 0
+                    ? ((deskAllocations.founder_draw / totalDeskPayouts) * 100).toFixed(1)
+                    : 0}
+                  % of total
+                </span>
+              </div>
+
+              <div className="rounded-xl border border-purple-500/30 bg-purple-500/10 p-3">
+                <span className="text-[10px] uppercase text-purple-400 font-bold block">🛡️ Tax Reserve</span>
+                <p className="text-lg font-bold text-purple-300 mt-1">
+                  {formatCurrency(deskAllocations.tax_reserve)}
+                </p>
+                <span className="text-[10px] text-fog-400">
+                  {totalDeskPayouts > 0
+                    ? ((deskAllocations.tax_reserve / totalDeskPayouts) * 100).toFixed(1)
+                    : 0}
+                  % of total
+                </span>
+              </div>
+            </div>
+
+            {/* Payout Distribution Stack Bar */}
+            {totalDeskPayouts > 0 && (
+              <div className="space-y-1.5">
+                <div className="flex justify-between text-xs text-fog-400">
+                  <span>Allocation Distribution</span>
+                  <span className="font-mono text-fog-200">
+                    Total Extracted: <strong>{formatCurrency(totalDeskPayouts)}</strong>
+                  </span>
+                </div>
+                <div className="w-full bg-white/5 h-3 rounded-full overflow-hidden flex">
+                  <div
+                    className="bg-amber-400 h-full transition-all"
+                    style={{
+                      width: `${(deskAllocations.treasury / totalDeskPayouts) * 100}%`,
+                    }}
+                    title={`Treasury: ${formatCurrency(deskAllocations.treasury)}`}
+                  />
+                  <div
+                    className="bg-sky-400 h-full transition-all"
+                    style={{
+                      width: `${(deskAllocations.reinvestment / totalDeskPayouts) * 100}%`,
+                    }}
+                    title={`Reinvestment: ${formatCurrency(deskAllocations.reinvestment)}`}
+                  />
+                  <div
+                    className="bg-emerald-400 h-full transition-all"
+                    style={{
+                      width: `${(deskAllocations.founder_draw / totalDeskPayouts) * 100}%`,
+                    }}
+                    title={`Founder Draw: ${formatCurrency(deskAllocations.founder_draw)}`}
+                  />
+                  <div
+                    className="bg-purple-400 h-full transition-all"
+                    style={{
+                      width: `${(deskAllocations.tax_reserve / totalDeskPayouts) * 100}%`,
+                    }}
+                    title={`Tax Reserve: ${formatCurrency(deskAllocations.tax_reserve)}`}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Historical Disbursements Table */}
+            <div className="space-y-2">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-fog-400">
+                Disbursement History &amp; Pool Splits
+              </h4>
+              <div className="max-h-60 overflow-y-auto rounded-xl border border-white/10">
+                <table className="w-full text-left text-xs font-mono">
+                  <thead className="border-b border-white/10 bg-white/[0.02] text-fog-500 uppercase">
+                    <tr>
+                      <th className="px-3 py-2">Date</th>
+                      <th className="px-3 py-2">Account</th>
+                      <th className="px-3 py-2">Total Amount</th>
+                      <th className="px-3 py-2">Treasury</th>
+                      <th className="px-3 py-2">Reinvest</th>
+                      <th className="px-3 py-2">Founder</th>
+                      <th className="px-3 py-2">Tax</th>
+                      <th className="px-3 py-2 text-right font-sans">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/5">
+                    {withdrawals.map((w) => {
+                      const acc = accounts.find((a) => a.id === w.account_id);
+                      const { allocation } = parsePayoutAllocation(w.notes);
+                      return (
+                        <tr key={w.id} className="hover:bg-white/[0.02]">
+                          <td className="px-3 py-2 text-fog-300">{w.withdrawn_on}</td>
+                          <td className="px-3 py-2 font-sans text-fog-100">{acc?.label ?? "—"}</td>
+                          <td className="px-3 py-2 text-emerald-400 font-bold">
+                            {formatCurrency(Number(w.amount))}
+                          </td>
+                          <td className="px-3 py-2 text-amber-300">
+                            {allocation.treasury > 0 ? formatCurrency(allocation.treasury) : "—"}
+                          </td>
+                          <td className="px-3 py-2 text-sky-300">
+                            {allocation.reinvestment > 0
+                              ? formatCurrency(allocation.reinvestment)
+                              : "—"}
+                          </td>
+                          <td className="px-3 py-2 text-emerald-300">
+                            {allocation.founder_draw > 0
+                              ? formatCurrency(allocation.founder_draw)
+                              : "—"}
+                          </td>
+                          <td className="px-3 py-2 text-purple-300">
+                            {allocation.tax_reserve > 0 ? formatCurrency(allocation.tax_reserve) : "—"}
+                          </td>
+                          <td className="px-3 py-2 text-right font-sans">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsAllocationsOpen(false);
+                                setEditingPayout(w);
+                              }}
+                              className="text-gold hover:underline text-[11px]"
+                            >
+                              Edit
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+
+                    {withdrawals.length === 0 && (
+                      <tr>
+                        <td colSpan={8} className="px-4 py-6 text-center text-fog-600 font-sans">
+                          No withdrawals recorded yet.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="flex justify-end pt-2">
+              <button
+                onClick={() => setIsAllocationsOpen(false)}
+                className="rounded-lg border border-white/10 px-4 py-2 text-xs text-fog-200 hover:text-white transition cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 12: EDIT PAYOUT ALLOCATION */}
+      {editingPayout && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md rounded-2xl border border-gold/40 bg-ink-950 p-6 space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-white/10 pb-3">
+              <div>
+                <h3 className="font-display text-lg font-bold text-fog-100">
+                  Adjust Payout Allocation
+                </h3>
+                <p className="text-xs text-fog-400">
+                  Disbursement of {formatCurrency(Number(editingPayout.amount))} on{" "}
+                  {editingPayout.withdrawn_on}
+                </p>
+              </div>
+              <button
+                onClick={() => setEditingPayout(null)}
+                className="text-fog-400 hover:text-white transition cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form
+              action={async (formData) => {
+                await updatePropPayoutAllocationAction(formData);
+                setEditingPayout(null);
+              }}
+              className="space-y-4"
+            >
+              <input type="hidden" name="id" value={editingPayout.id} />
+
+              {/* Preset quick buttons */}
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-fog-400">Quick Split Presets:</span>
+                <div className="flex gap-1 text-[11px]">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const total = Number(editingPayout.amount);
+                      setEditAllocTreasury(Math.round(total * 0.4));
+                      setEditAllocReinvestment(Math.round(total * 0.2));
+                      setEditAllocFounder(Math.round(total * 0.3));
+                      setEditAllocTax(total - Math.round(total * 0.4) - Math.round(total * 0.2) - Math.round(total * 0.3));
+                    }}
+                    className="px-2 py-0.5 rounded bg-white/5 hover:bg-white/10 text-fog-300 transition"
+                  >
+                    40/20/30/10
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const total = Number(editingPayout.amount);
+                      setEditAllocTreasury(Math.round(total * 0.5));
+                      setEditAllocReinvestment(0);
+                      setEditAllocFounder(total - Math.round(total * 0.5));
+                      setEditAllocTax(0);
+                    }}
+                    className="px-2 py-0.5 rounded bg-white/5 hover:bg-white/10 text-fog-300 transition"
+                  >
+                    50/50
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const total = Number(editingPayout.amount);
+                      setEditAllocTreasury(total);
+                      setEditAllocReinvestment(0);
+                      setEditAllocFounder(0);
+                      setEditAllocTax(0);
+                    }}
+                    className="px-2 py-0.5 rounded bg-white/5 hover:bg-white/10 text-fog-300 transition"
+                  >
+                    100% Corp
+                  </button>
+                </div>
+              </div>
+
+              {/* Four Allocation Inputs */}
+              <div className="grid grid-cols-2 gap-3 text-xs">
+                <div>
+                  <label className="text-[11px] text-amber-300 font-medium block mb-1">
+                    🏛️ Flectēre Treasury ($)
+                  </label>
+                  <input
+                    name="alloc_treasury"
+                    type="number"
+                    step="0.01"
+                    defaultValue={
+                      parsePayoutAllocation(editingPayout.notes).allocation.treasury || 0
+                    }
+                    value={editAllocTreasury !== 0 ? editAllocTreasury : undefined}
+                    onChange={(e) => setEditAllocTreasury(Number(e.target.value))}
+                    className={inputClasses}
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] text-sky-300 font-medium block mb-1">
+                    🔄 Desk Reinvestment ($)
+                  </label>
+                  <input
+                    name="alloc_reinvestment"
+                    type="number"
+                    step="0.01"
+                    defaultValue={
+                      parsePayoutAllocation(editingPayout.notes).allocation.reinvestment || 0
+                    }
+                    value={editAllocReinvestment !== 0 ? editAllocReinvestment : undefined}
+                    onChange={(e) => setEditAllocReinvestment(Number(e.target.value))}
+                    className={inputClasses}
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] text-emerald-300 font-medium block mb-1">
+                    👤 Founder Dividends ($)
+                  </label>
+                  <input
+                    name="alloc_founder"
+                    type="number"
+                    step="0.01"
+                    defaultValue={
+                      parsePayoutAllocation(editingPayout.notes).allocation.founder_draw || 0
+                    }
+                    value={editAllocFounder !== 0 ? editAllocFounder : undefined}
+                    onChange={(e) => setEditAllocFounder(Number(e.target.value))}
+                    className={inputClasses}
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] text-purple-300 font-medium block mb-1">
+                    🛡️ Tax &amp; Reserve ($)
+                  </label>
+                  <input
+                    name="alloc_tax"
+                    type="number"
+                    step="0.01"
+                    defaultValue={
+                      parsePayoutAllocation(editingPayout.notes).allocation.tax_reserve || 0
+                    }
+                    value={editAllocTax !== 0 ? editAllocTax : undefined}
+                    onChange={(e) => setEditAllocTax(Number(e.target.value))}
+                    className={inputClasses}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className={labelClasses}>Reference Notes / Wire Memo</label>
+                <input
+                  name="notes"
+                  defaultValue={parsePayoutAllocation(editingPayout.notes).cleanNotes}
+                  className={inputClasses}
+                />
+              </div>
+
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingPayout(null)}
+                  className="rounded-lg border border-white/10 px-4 py-2 text-sm text-fog-400 hover:text-white transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button type="submit" className={submitClasses}>
+                  Save Allocation
+                </button>
               </div>
             </form>
           </div>

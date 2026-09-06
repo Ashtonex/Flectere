@@ -27,6 +27,25 @@ export const activityTypes: CrmActivity["activity_type"][] = [
   "follow_up",
 ];
 
+export const callOutcomes = [
+  { value: "connected", label: "Connected / Spoke with Contact" },
+  { value: "meeting_scheduled", label: "Meeting / Demo Scheduled" },
+  { value: "left_voicemail", label: "Left Voicemail" },
+  { value: "busy", label: "Busy / Call Dropped" },
+  { value: "no_answer", label: "No Answer" },
+  { value: "gatekeeper", label: "Spoke with Assistant / Gatekeeper" },
+  { value: "wrong_number", label: "Wrong Number / Disconnected" },
+] as const;
+
+export const meetingTypes = [
+  { value: "discovery", label: "Discovery & Qualification" },
+  { value: "demo", label: "System Architecture Demo" },
+  { value: "scoping", label: "Technical Scoping & Audit" },
+  { value: "proposal_review", label: "Proposal & Pricing Review" },
+  { value: "closing", label: "Contract Sign-off / Negotiation" },
+  { value: "check_in", label: "Executive Check-in" },
+] as const;
+
 export const revenueStatuses: RevenueRecord["status"][] = [
   "expected",
   "invoiced",
@@ -241,4 +260,111 @@ export function computeExpansionSuggestions(opportunity: CrmOpportunity): string
 
   return suggestions;
 }
+
+export function getActivityIcon(type: string): string {
+  switch (type) {
+    case "call":
+      return "📞";
+    case "meeting":
+      return "🤝";
+    case "email":
+      return "✉️";
+    case "note":
+      return "📝";
+    case "proposal":
+      return "📄";
+    case "delivery":
+      return "🚀";
+    case "follow_up":
+      return "⏰";
+    default:
+      return "📌";
+  }
+}
+
+export function getActivityBadgeColor(type: string): { bg: string; text: string; border: string } {
+  switch (type) {
+    case "call":
+      return { bg: "bg-blue-500/10", text: "text-blue-400", border: "border-blue-500/30" };
+    case "meeting":
+      return { bg: "bg-purple-500/10", text: "text-purple-400", border: "border-purple-500/30" };
+    case "email":
+      return { bg: "bg-cyan-500/10", text: "text-cyan-400", border: "border-cyan-500/30" };
+    case "note":
+      return { bg: "bg-amber-500/10", text: "text-amber-300", border: "border-amber-500/30" };
+    case "proposal":
+      return { bg: "bg-emerald-500/10", text: "text-emerald-400", border: "border-emerald-500/30" };
+    case "delivery":
+      return { bg: "bg-indigo-500/10", text: "text-indigo-400", border: "border-indigo-500/30" };
+    case "follow_up":
+      return { bg: "bg-gold/10", text: "text-gold", border: "border-gold/30" };
+    default:
+      return { bg: "bg-white/10", text: "text-fog-300", border: "border-white/10" };
+  }
+}
+
+export type DealActivityHealth = {
+  status: "scheduled" | "overdue" | "no_activity" | "completed";
+  label: string;
+  badgeTone: string;
+  nextStep?: string | null;
+  lastTouchDate?: string | null;
+  activityCount: number;
+};
+
+export function computeOpportunityActivityHealth(
+  opportunityId: string,
+  activities: CrmActivity[]
+): DealActivityHealth {
+  const oppActivities = activities.filter((a) => a.opportunity_id === opportunityId);
+  const today = new Date().toISOString().slice(0, 10);
+
+  if (oppActivities.length === 0) {
+    return {
+      status: "no_activity",
+      label: "No activity logged",
+      badgeTone: "bg-rose-500/15 text-rose-300 border-rose-500/30",
+      activityCount: 0,
+    };
+  }
+
+  // Find latest activity
+  const sorted = [...oppActivities].sort(
+    (a, b) => new Date(b.activity_date).getTime() - new Date(a.activity_date).getTime()
+  );
+  const latest = sorted[0];
+
+  const hasNextStep = sorted.find((a) => a.next_step && a.next_step.trim().length > 0);
+
+  // Check if latest activity date is in the past and no next step
+  if (latest.activity_date < today && !hasNextStep?.next_step) {
+    return {
+      status: "overdue",
+      label: "Needs follow-up",
+      badgeTone: "bg-amber-500/15 text-amber-300 border-amber-500/30",
+      lastTouchDate: latest.activity_date,
+      activityCount: oppActivities.length,
+    };
+  }
+
+  if (hasNextStep?.next_step) {
+    return {
+      status: "scheduled",
+      label: "Next step planned",
+      badgeTone: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
+      nextStep: hasNextStep.next_step,
+      lastTouchDate: latest.activity_date,
+      activityCount: oppActivities.length,
+    };
+  }
+
+  return {
+    status: "completed",
+    label: "Active",
+    badgeTone: "bg-white/10 text-fog-300 border-white/10",
+    lastTouchDate: latest.activity_date,
+    activityCount: oppActivities.length,
+  };
+}
+
 

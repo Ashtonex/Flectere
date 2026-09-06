@@ -27,6 +27,7 @@ import {
   updateClientAction,
 } from "../actions";
 import { ClientDocumentsGrouped } from "./ClientDocumentsGrouped";
+import { ClientActivitySection } from "./ClientActivitySection";
 
 const inputClasses =
   "w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-fog-100 outline-none transition-colors focus:border-gold/50";
@@ -445,6 +446,14 @@ export default async function ClientDetailPage({
           </tbody>
         </table>
       </div>
+
+      {/* Salesforce-Style Client Activity & Touchpoints Hub */}
+      <ClientActivitySection
+        clientId={(client as Client).id}
+        clientName={(client as Client).name}
+        activities={activityList}
+        opportunities={opportunityList}
+      />
 
       {/* Categorized Document Vault */}
       <ClientDocumentsGrouped

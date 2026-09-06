@@ -22,6 +22,7 @@ import type {
   Service,
 } from "@/lib/hub/types";
 import { PipelineBoard } from "./PipelineBoard";
+import { ActivityTimelineFeed } from "./ActivityTimelineFeed";
 
 export default async function CrmPage() {
   const supabase = await createClient();
@@ -122,6 +123,7 @@ export default async function CrmPage() {
           arms={armList}
           services={serviceList}
           revenueRecords={revenueList}
+          activities={activityList}
         />
       </div>
 
@@ -195,29 +197,13 @@ export default async function CrmPage() {
       </div>
 
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
-        <div className="rounded-xl border border-white/10 bg-white/[0.02] p-6">
-          <h2 className="font-display text-lg text-fog-100">Activity Timeline</h2>
-          <ul className="mt-4 divide-y divide-white/5">
-            {activityList.slice(0, 12).map((activity) => (
-              <li key={activity.id} className="py-3">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-sm text-fog-100">{activity.subject}</p>
-                  <span className="shrink-0 text-xs text-fog-600">
-                    {new Date(activity.activity_date).toLocaleDateString()}
-                  </span>
-                </div>
-                <p className="mt-1 text-xs text-fog-500">
-                  {labelize(activity.activity_type)} · {clientName(activity.client_id, clientList)} ·{" "}
-                  {armName(activity.business_arm_id, armList)}
-                </p>
-                {activity.next_step && <p className="mt-1 text-xs text-gold">Next: {activity.next_step}</p>}
-              </li>
-            ))}
-            {activityList.length === 0 && (
-              <li className="py-3 text-sm text-fog-600">No activity logged yet.</li>
-            )}
-          </ul>
-        </div>
+        <ActivityTimelineFeed
+          activities={activityList}
+          clients={clientList}
+          leads={leadList}
+          arms={armList}
+          opportunities={opportunityList}
+        />
 
         <div className="rounded-xl border border-white/10 bg-white/[0.02] p-6">
           <h2 className="font-display text-lg text-fog-100">Revenue Ledger</h2>

@@ -67,6 +67,69 @@ export type Withdrawal = {
   created_at: string;
 };
 
+export type CapitalSource =
+  | "flectere_treasury"
+  | "flectere_cashflow"
+  | "desk_reinvestment"
+  | "personal_capital";
+
+export type PayoutAllocation = {
+  treasury: number;
+  reinvestment: number;
+  founder_draw: number;
+  tax_reserve: number;
+};
+
+export function parsePayoutAllocation(notes: string | null): {
+  allocation: PayoutAllocation;
+  cleanNotes: string;
+} {
+  const empty: PayoutAllocation = {
+    treasury: 0,
+    reinvestment: 0,
+    founder_draw: 0,
+    tax_reserve: 0,
+  };
+  if (!notes) return { allocation: empty, cleanNotes: "" };
+
+  const cleanNotes = notes
+    .replace(/\[ALLOCATION_DATA:.*?\]/g, "")
+    .replace(/\[Allocated:.*?\]/g, "")
+    .trim();
+
+  try {
+    const match = notes.match(/\[ALLOCATION_DATA:(.*?)\]/);
+    if (match && match[1]) {
+      const data = JSON.parse(match[1]);
+      return {
+        allocation: {
+          treasury: Number(data.treasury || 0),
+          reinvestment: Number(data.reinvestment || 0),
+          founder_draw: Number(data.founder_draw || 0),
+          tax_reserve: Number(data.tax_reserve || 0),
+        },
+        cleanNotes,
+      };
+    }
+  } catch {
+    // fallback
+  }
+  return { allocation: empty, cleanNotes };
+}
+
+export function formatPayoutAllocation(alloc: PayoutAllocation, memo?: string | null): string {
+  const meta = `[ALLOCATION_DATA:${JSON.stringify(alloc)}]`;
+  const human = `[Allocated: Treasury $${alloc.treasury.toLocaleString()} | Reinvestment $${alloc.reinvestment.toLocaleString()} | Founder $${alloc.founder_draw.toLocaleString()} | Tax $${alloc.tax_reserve.toLocaleString()}]`;
+  const cleanMemo = memo
+    ? memo
+        .replace(/\[ALLOCATION_DATA:.*?\]/g, "")
+        .replace(/\[Allocated:.*?\]/g, "")
+        .trim()
+    : "";
+  return [human, cleanMemo, meta].filter(Boolean).join(" ");
+}
+
+
 export type ClientDocument = {
   id: string;
   client_id: string;

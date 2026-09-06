@@ -7,7 +7,15 @@ import {
   formatCurrency,
   formatPercent,
 } from "@/lib/hub/analytics";
-import type { Expense, PerformanceEntry, TradingAccount, Withdrawal } from "@/lib/hub/types";
+import {
+  parsePayoutAllocation,
+  formatPayoutAllocation,
+  type Expense,
+  type PerformanceEntry,
+  type TradingAccount,
+  type Withdrawal,
+} from "@/lib/hub/types";
+
 
 const mockAccount: TradingAccount = {
   id: "acc-1",
@@ -232,4 +240,26 @@ test("Analytics Core: blown account liquid capital is zeroed while accounting re
   assert.equal(accounting.activeChallengeCount, 0);
   assert.equal(accounting.activeFundedCount, 0);
 });
+
+test("Analytics Core: parsePayoutAllocation and formatPayoutAllocation handle splits roundtrip", () => {
+  const alloc = {
+    treasury: 4000,
+    reinvestment: 2000,
+    founder_draw: 3000,
+    tax_reserve: 1000,
+  };
+
+  const formatted = formatPayoutAllocation(alloc, "Deel wire transfer ref #8921");
+  assert.ok(formatted.includes("ALLOCATION_DATA"));
+  assert.ok(formatted.includes("Treasury $4,000"));
+  assert.ok(formatted.includes("Deel wire transfer"));
+
+  const parsed = parsePayoutAllocation(formatted);
+  assert.ok(parsed !== null);
+  assert.equal(parsed?.allocation.treasury, 4000);
+  assert.equal(parsed?.allocation.reinvestment, 2000);
+  assert.equal(parsed?.allocation.founder_draw, 3000);
+  assert.equal(parsed?.allocation.tax_reserve, 1000);
+});
+
 

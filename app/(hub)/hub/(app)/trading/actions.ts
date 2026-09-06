@@ -2,6 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { formatPayoutAllocation } from "@/lib/hub/types";
+
 
 function nullableString(formData: FormData, key: string) {
   return String(formData.get(key) || "").trim() || null;
@@ -53,20 +55,32 @@ export async function createPropAccountAction(formData: FormData) {
     return;
   }
 
-  // If challenge cost is recorded, log expense immediately
+  const capitalSource = String(formData.get("capital_source") || "flectere_treasury");
+
+  // If challenge cost is recorded, log expense immediately with capital origin audit
   if (account?.id && challengeCost && challengeCost > 0) {
+    const sourceLabel =
+      capitalSource === "flectere_treasury"
+        ? "Flectēre Corporate Treasury"
+        : capitalSource === "flectere_cashflow"
+        ? "Flectēre Advisory Revenue"
+        : capitalSource === "desk_reinvestment"
+        ? "Prop Desk Reinvestment Fund"
+        : "Founder Personal Capital";
+
     await supabase.from("expenses").insert({
       account_id: account.id,
       category: accountType === "live" ? "deposit" : "prop_fee",
       amount: challengeCost,
       currency: "USD",
       incurred_on: new Date().toISOString().slice(0, 10),
-      notes: `${label} initial allocation / evaluation fee`,
+      notes: `[Source: ${sourceLabel}] [CAPITAL_SOURCE:${capitalSource}] ${label} initial allocation / evaluation fee`,
     });
   }
 
   revalidateTrading();
 }
+
 
 export async function updatePropAccountAction(formData: FormData) {
   const supabase = await createClient();
@@ -183,17 +197,77 @@ export async function addPropPayoutAction(formData: FormData) {
   const amount = nullableNumber(formData, "amount");
   if (!accountId || !withdrawnOn || !amount || amount <= 0) return;
 
-  const notes = nullableString(formData, "notes");
+  const memo = nullableString(formData, "notes");
+  const allocTreasury = nullableNumber(formData, "alloc_treasury");
+  const allocReinvestment = nullableNumber(formData, "alloc_reinvestment");
+  const allocFounder = nullableNumber(formData, "alloc_founder");
+  const allocTax = nullableNumber(formData, "alloc_tax");
+
+  let finalNotes: string;
+  if (
+    allocTreasury !== null ||
+    allocReinvestment !== null ||
+    allocFounder !== null ||
+    allocTax !== null
+  ) {
+    finalNotes = formatPayoutAllocation(
+      {
+        treasury: allocTreasury ?? 0,
+        reinvestment: allocReinvestment ?? 0,
+        founder_draw: allocFounder ?? 0,
+        tax_reserve: allocTax ?? 0,
+      },
+      memo
+    );
+  } else {
+    // Default 40% Flectere Treasury, 20% Reinvestment, 30% Founder Draw, 10% Tax Buffer
+    finalNotes = formatPayoutAllocation(
+      {
+        treasury: amount * 0.4,
+        reinvestment: amount * 0.2,
+        founder_draw: amount * 0.3,
+        tax_reserve: amount * 0.1,
+      },
+      memo
+    );
+  }
 
   await supabase.from("withdrawals").insert({
     account_id: accountId,
     amount,
     withdrawn_on: withdrawnOn,
-    notes: notes ?? "Prop firm profit withdrawal payout",
+    notes: finalNotes,
   });
 
   revalidateTrading();
 }
+
+export async function updatePropPayoutAllocationAction(formData: FormData) {
+  const supabase = await createClient();
+
+  const id = String(formData.get("id") || "");
+  if (!id) return;
+
+  const memo = nullableString(formData, "notes");
+  const allocTreasury = nullableNumber(formData, "alloc_treasury") ?? 0;
+  const allocReinvestment = nullableNumber(formData, "alloc_reinvestment") ?? 0;
+  const allocFounder = nullableNumber(formData, "alloc_founder") ?? 0;
+  const allocTax = nullableNumber(formData, "alloc_tax") ?? 0;
+
+  const finalNotes = formatPayoutAllocation(
+    {
+      treasury: allocTreasury,
+      reinvestment: allocReinvestment,
+      founder_draw: allocFounder,
+      tax_reserve: allocTax,
+    },
+    memo
+  );
+
+  await supabase.from("withdrawals").update({ notes: finalNotes }).eq("id", id);
+  revalidateTrading();
+}
+
 
 export async function deletePropPayoutAction(formData: FormData) {
   const supabase = await createClient();
