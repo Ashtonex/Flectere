@@ -22,16 +22,15 @@ export function computeAccountAnalytics(
   expenses: Expense[],
   withdrawals: Withdrawal[] = []
 ): AccountAnalytics {
+  const isBlown = account.phase === "blown" || account.status === "blown";
   const latest = latestEntry(entries);
   const totalSpend = expenses.reduce((sum, e) => sum + Number(e.amount), 0);
   const extractedValue = withdrawals.reduce((sum, w) => sum + Number(w.amount), 0);
 
-  const latestValue = latest?.equity ?? latest?.balance ?? null;
+  // If an account is blown, its liquid capital remaining on desk is $0.
+  const latestValue = isBlown ? 0 : (latest?.equity ?? latest?.balance ?? null);
 
-  // "Total value" is what the relationship is actually worth: what's still
-  // sitting in the account, plus what's already been paid out of it. It's
-  // null (not 0) when there's genuinely no data yet, so the UI can show
-  // "—" instead of a misleading zero.
+  // Total value is what remains liquid (0 if blown) plus what was extracted into cash
   const totalValue =
     latestValue !== null || extractedValue > 0 ? (latestValue ?? 0) + extractedValue : null;
 
@@ -44,8 +43,8 @@ export function computeAccountAnalytics(
 
   return {
     accountId: account.id,
-    latestBalance: latest?.balance ?? null,
-    latestEquity: latest?.equity ?? null,
+    latestBalance: isBlown ? 0 : (latest?.balance ?? null),
+    latestEquity: isBlown ? 0 : (latest?.equity ?? null),
     totalSpend,
     extractedValue,
     totalValue,
@@ -112,11 +111,19 @@ export function computeTradingDeskAccounting(
     totalChallengeFeesPaid > 0 ? netPortfolioCashProfit / totalChallengeFeesPaid : null;
 
   const activeChallengeCount = accounts.filter(
-    (a) => a.account_type === "challenge" && a.phase !== "blown" && a.status !== "blown"
+    (a) =>
+      a.account_type === "challenge" &&
+      a.phase !== "blown" &&
+      a.status !== "blown" &&
+      a.status !== "inactive"
   ).length;
 
   const activeFundedCount = accounts.filter(
-    (a) => a.account_type === "funded" || a.account_type === "live"
+    (a) =>
+      (a.account_type === "funded" || a.account_type === "live") &&
+      a.phase !== "blown" &&
+      a.status !== "blown" &&
+      a.status !== "inactive"
   ).length;
 
   return {
@@ -130,4 +137,5 @@ export function computeTradingDeskAccounting(
     activeFundedCount,
   };
 }
+
 

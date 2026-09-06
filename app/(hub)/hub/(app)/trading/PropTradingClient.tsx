@@ -24,6 +24,7 @@ import {
 
 interface AccountStats {
   account: TradingAccount;
+  isBlown: boolean;
   latestEquity: number;
   latestBalance: number;
   totalPayouts: number;
@@ -33,6 +34,7 @@ interface AccountStats {
   payoutRoi: number | null;
   entryCount: number;
   // Prop metrics
+
   startingBalance: number;
   targetPct: number;
   targetDollar: number;
@@ -132,10 +134,15 @@ export function PropTradingClient({
         a.entry_date > b.entry_date ? 1 : -1
       );
 
+      const isBlown = account.phase === "blown" || account.status === "blown";
       const latest = accEntries[0];
       const startingBalance = Number(account.starting_balance ?? 100000);
-      const latestEquity = Number(latest?.equity ?? latest?.balance ?? startingBalance);
-      const latestBalance = Number(latest?.balance ?? startingBalance);
+      const latestEquity = isBlown
+        ? 0
+        : Number(latest?.equity ?? latest?.balance ?? startingBalance);
+      const latestBalance = isBlown
+        ? 0
+        : Number(latest?.balance ?? startingBalance);
 
       const accPayouts = withdrawals
         .filter((w) => w.account_id === account.id)
@@ -179,7 +186,8 @@ export function PropTradingClient({
 
       const isTargetHit = profitEarned >= targetDollar && account.account_type !== "funded";
       const isDailyBreached = todayPnl < -dailyLossLimitDollar;
-      const isMaxBreached = latestEquity <= maxLossFloor;
+      const rawLatestEquity = Number(latest?.equity ?? latest?.balance ?? startingBalance);
+      const isMaxBreached = isBlown || rawLatestEquity <= maxLossFloor;
 
       // Analytics: win rate, profit factor, best/worst
       let winCount = 0;
@@ -210,6 +218,7 @@ export function PropTradingClient({
 
       return {
         account,
+        isBlown,
         latestEquity,
         latestBalance,
         totalPayouts: accPayouts,
@@ -241,15 +250,22 @@ export function PropTradingClient({
         avgLoss,
       };
     });
+
   }, [accounts, entries, expenses, withdrawals]);
 
   // Filtered accounts list
   const filteredAccountStats = useMemo(() => {
     return accountStats.filter((item) => {
       if (filterType !== "all") {
-        if (filterType === "funded" && item.account.account_type !== "funded") return false;
-        if (filterType === "challenge" && item.account.account_type !== "challenge") return false;
-        if (filterType === "live" && item.account.account_type !== "live") return false;
+        if (filterType === "blown") {
+          if (!item.isBlown) return false;
+        } else {
+          // If viewing funded, challenge, or live, exclude blown accounts
+          if (item.isBlown) return false;
+          if (filterType === "funded" && item.account.account_type !== "funded") return false;
+          if (filterType === "challenge" && item.account.account_type !== "challenge") return false;
+          if (filterType === "live" && item.account.account_type !== "live") return false;
+        }
       }
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
@@ -296,28 +312,35 @@ export function PropTradingClient({
       .sort((a, b) => (a.incurred_on < b.incurred_on ? 1 : -1));
   }, [expenses, selectedAccountId]);
 
-  // Desk portfolio aggregated metrics
-  const totalDeskBalance = accountStats.reduce((sum, s) => sum + s.latestBalance, 0);
-  const totalDeskEquity = accountStats.reduce((sum, s) => sum + s.latestEquity, 0);
+  // Desk portfolio aggregated metrics (ONLY count active, non-blown accounts for liquid capital)
+  const activeAccounts = useMemo(() => accountStats.filter((s) => !s.isBlown), [accountStats]);
+  const blownAccounts = useMemo(() => accountStats.filter((s) => s.isBlown), [accountStats]);
+  const totalDeskBalance = activeAccounts.reduce((sum, s) => sum + s.latestBalance, 0);
+  const totalDeskEquity = activeAccounts.reduce((sum, s) => sum + s.latestEquity, 0);
   const totalDeskPayouts = accountStats.reduce((sum, s) => sum + s.totalPayouts, 0);
   const totalDeskFees = accountStats.reduce((sum, s) => sum + s.totalFees, 0);
   const netDeskCash = totalDeskPayouts - totalDeskFees;
 
   // Firm allocation breakdown
   const firmAllocations = useMemo(() => {
-    const map = new Map<string, { firm: string; totalCapital: number; count: number; fundedCapital: number }>();
+    const map = new Map<string, { firm: string; totalCapital: number; count: number; fundedCapital: number; blownCount: number }>();
     accountStats.forEach((s) => {
       const firm = s.account.broker_or_prop_firm || "Personal Capital";
-      const existing = map.get(firm) || { firm, totalCapital: 0, count: 0, fundedCapital: 0 };
-      existing.totalCapital += s.startingBalance;
+      const existing = map.get(firm) || { firm, totalCapital: 0, count: 0, fundedCapital: 0, blownCount: 0 };
       existing.count += 1;
-      if (s.account.account_type === "funded") {
-        existing.fundedCapital += s.startingBalance;
+      if (s.isBlown) {
+        existing.blownCount += 1;
+      } else {
+        existing.totalCapital += s.startingBalance;
+        if (s.account.account_type === "funded") {
+          existing.fundedCapital += s.startingBalance;
+        }
       }
       map.set(firm, existing);
     });
     return Array.from(map.values()).sort((a, b) => b.totalCapital - a.totalCapital);
   }, [accountStats]);
+
 
   // SVG Chart calculation
   const chartData = useMemo(() => {
@@ -480,7 +503,7 @@ export function PropTradingClient({
             {formatCurrency(totalDeskEquity)}
           </p>
           <div className="mt-1 flex items-center justify-between text-[10px] text-fog-500 font-mono">
-            <span>Balance: {formatCurrency(totalDeskBalance)}</span>
+            <span>Balance: {formatCurrency(totalDeskBalance)} ({activeAccounts.length} active)</span>
             <button
               onClick={() => setIsHeatmapOpen(true)}
               className="text-gold hover:underline cursor-pointer"
@@ -536,11 +559,16 @@ export function PropTradingClient({
               </button>
             </div>
             <p className="mt-2 font-display text-2xl text-fog-100 font-mono font-bold">
-              {accounts.length}
+              {activeAccounts.length}
+              {blownAccounts.length > 0 && (
+                <span className="text-xs text-rose-400 font-normal ml-2 font-sans">
+                  ({blownAccounts.length} blown)
+                </span>
+              )}
             </p>
           </div>
           <p className="text-[10px] text-fog-400 mt-1 font-mono">
-            {accounts.filter((a) => a.account_type === "funded").length} Funded • {accounts.filter((a) => a.account_type === "challenge").length} Challenge
+            {activeAccounts.filter((a) => a.account.account_type === "funded").length} Funded • {activeAccounts.filter((a) => a.account.account_type === "challenge").length} Challenge
           </p>
         </div>
       </div>
@@ -572,17 +600,19 @@ export function PropTradingClient({
               className="w-full rounded-lg border border-white/10 bg-black/50 px-3 py-1.5 text-xs text-fog-100 placeholder-fog-600 focus:border-gold/50 outline-none"
             />
             <div className="flex gap-1.5 text-xs">
-              {["all", "funded", "challenge", "live"].map((t) => (
+              {["all", "funded", "challenge", "live", "blown"].map((t) => (
                 <button
                   key={t}
                   onClick={() => setFilterType(t)}
                   className={`flex-1 rounded-md py-1 text-[11px] font-medium capitalize transition cursor-pointer ${
                     filterType === t
-                      ? "bg-gold text-ink-950 font-bold"
+                      ? t === "blown"
+                        ? "bg-rose-500 text-white font-bold"
+                        : "bg-gold text-ink-950 font-bold"
                       : "bg-white/[0.03] text-fog-400 hover:text-white"
                   }`}
                 >
-                  {t}
+                  {t === "blown" && blownAccounts.length > 0 ? `Blown (${blownAccounts.length})` : t}
                 </button>
               ))}
             </div>
@@ -615,14 +645,20 @@ export function PropTradingClient({
                     <div className="flex flex-col items-end gap-1">
                       <span
                         className={`rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider ${
-                          item.account.account_type === "funded"
+                          item.isBlown
+                            ? "bg-rose-500/20 text-rose-400 border border-rose-500/30"
+                            : item.account.account_type === "funded"
                             ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
                             : item.account.account_type === "live"
                             ? "bg-sky-500/20 text-sky-400 border border-sky-500/30"
                             : "bg-amber-500/20 text-amber-300 border border-amber-500/30"
                         }`}
                       >
-                        {item.account.phase ? item.account.phase.replace("_", " ") : item.account.account_type}
+                        {item.isBlown
+                          ? "BLOWN / INACTIVE"
+                          : item.account.phase
+                          ? item.account.phase.replace("_", " ")
+                          : item.account.account_type}
                       </span>
                       {item.isTargetHit && (
                         <span className="text-[8px] bg-emerald-500/20 text-emerald-400 px-1 py-0.2 rounded font-bold font-mono">
@@ -633,27 +669,34 @@ export function PropTradingClient({
                   </div>
 
                   {/* Cushion micro indicators */}
-                  <div className="space-y-1">
-                    <div className="flex justify-between text-[10px] font-mono">
-                      <span className="text-fog-500">Target: {item.targetProgressPct.toFixed(0)}%</span>
-                      <span className={item.overallBufferPct < 30 ? "text-rose-400" : "text-emerald-400"}>
-                        {formatCurrency(item.overallBufferDollar)} floor cushion
-                      </span>
+                  {!item.isBlown && (
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-[10px] font-mono">
+                        <span className="text-fog-500">Target: {item.targetProgressPct.toFixed(0)}%</span>
+                        <span className={item.overallBufferPct < 30 ? "text-rose-400" : "text-emerald-400"}>
+                          {formatCurrency(item.overallBufferDollar)} floor cushion
+                        </span>
+                      </div>
+                      <div className="w-full bg-white/5 h-1.5 rounded-full overflow-hidden flex">
+                        <div
+                          className="bg-gold h-full rounded-full transition-all duration-300"
+                          style={{ width: `${item.targetProgressPct}%` }}
+                        />
+                      </div>
                     </div>
-                    <div className="w-full bg-white/5 h-1.5 rounded-full overflow-hidden flex">
-                      <div
-                        className="bg-gold h-full rounded-full transition-all duration-300"
-                        style={{ width: `${item.targetProgressPct}%` }}
-                      />
-                    </div>
-                  </div>
+                  )}
 
                   <div className="pt-2 border-t border-white/5 grid grid-cols-2 gap-2 text-xs">
                     <div>
-                      <span className="text-[9px] uppercase tracking-wider text-fog-500 block">Equity</span>
-                      <span className="font-mono font-bold text-white text-xs">
+                      <span className="text-[9px] uppercase tracking-wider text-fog-500 block">Liquid Equity</span>
+                      <span className={`font-mono font-bold text-xs ${item.isBlown ? "text-rose-400 line-through" : "text-white"}`}>
                         {formatCurrency(item.latestEquity)}
                       </span>
+                      {item.isBlown && (
+                        <span className="text-[8px] text-rose-400/80 block font-mono">
+                          (liquidated)
+                        </span>
+                      )}
                     </div>
                     <div className="text-right">
                       <span className="text-[9px] uppercase tracking-wider text-fog-500 block">Cash Payouts</span>
@@ -665,6 +708,7 @@ export function PropTradingClient({
                 </div>
               );
             })}
+
 
             {filteredAccountStats.length === 0 && (
               <div className="py-8 text-center text-xs text-fog-600">
@@ -755,17 +799,55 @@ export function PropTradingClient({
             </div>
 
             {/* Prop Rule Breaker Sentinel Status Banner */}
-            {selectedStats.isMaxBreached ? (
-              <div className="rounded-xl border border-rose-500/40 bg-rose-500/10 p-4 flex items-center gap-3">
-                <span className="text-xl">🛑</span>
-                <div>
-                  <h4 className="text-xs font-bold text-rose-300 uppercase tracking-wide">
-                    CRITICAL BREACH: Maximum Drawdown Limit Hit
-                  </h4>
-                  <p className="text-xs text-rose-200/80 mt-0.5">
-                    Account equity ({formatCurrency(selectedStats.latestEquity)}) has fallen below the liquidation threshold ({formatCurrency(selectedStats.maxLossFloor)}).
-                  </p>
+            {selectedStats.isBlown ? (
+              <div className="rounded-xl border border-rose-500/40 bg-rose-500/10 p-4 flex flex-wrap items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <span className="text-xl">💀</span>
+                  <div>
+                    <h4 className="text-xs font-bold text-rose-300 uppercase tracking-wide">
+                      ACCOUNT LIQUIDATED &amp; DEACTIVATED
+                    </h4>
+                    <p className="text-xs text-rose-200/80 mt-0.5">
+                      This account is marked as Blown. Active liquid capital is zeroed ($0.00) and excluded from desk totals.
+                    </p>
+                  </div>
                 </div>
+                <button
+                  onClick={() => setEditingAccount(selectedAccount)}
+                  className="rounded-lg border border-rose-500/40 bg-rose-500/20 px-3.5 py-1.5 text-xs text-rose-200 hover:bg-rose-500/30 transition cursor-pointer"
+                >
+                  Reset / Edit Account →
+                </button>
+              </div>
+            ) : selectedStats.isMaxBreached ? (
+              <div className="rounded-xl border border-rose-500/40 bg-rose-500/10 p-4 flex flex-wrap items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <span className="text-xl">🛑</span>
+                  <div>
+                    <h4 className="text-xs font-bold text-rose-300 uppercase tracking-wide">
+                      CRITICAL BREACH: Maximum Drawdown Limit Hit
+                    </h4>
+                    <p className="text-xs text-rose-200/80 mt-0.5">
+                      Account equity ({formatCurrency(selectedStats.latestEquity)}) has fallen below the liquidation threshold ({formatCurrency(selectedStats.maxLossFloor)}).
+                    </p>
+                  </div>
+                </div>
+                <form action={updatePropAccountAction}>
+                  <input type="hidden" name="id" value={selectedAccount?.id} />
+                  <input type="hidden" name="label" value={selectedAccount?.label} />
+                  <input type="hidden" name="broker_or_prop_firm" value={selectedAccount?.broker_or_prop_firm ?? ""} />
+                  <input type="hidden" name="account_type" value={selectedAccount?.account_type} />
+                  <input type="hidden" name="phase" value="blown" />
+                  <input type="hidden" name="status" value="blown" />
+                  <input type="hidden" name="starting_balance" value={selectedAccount?.starting_balance ?? ""} />
+                  <input type="hidden" name="challenge_cost" value={selectedAccount?.challenge_cost ?? ""} />
+                  <button
+                    type="submit"
+                    className="rounded-lg bg-rose-500 text-white font-bold px-3.5 py-1.5 text-xs hover:bg-rose-600 transition cursor-pointer shadow-lg shadow-rose-950"
+                  >
+                    Mark as Blown (Zero Equity) →
+                  </button>
+                </form>
               </div>
             ) : selectedStats.isDailyBreached ? (
               <div className="rounded-xl border border-rose-500/40 bg-rose-500/10 p-4 flex items-center gap-3">
@@ -779,6 +861,7 @@ export function PropTradingClient({
                   </p>
                 </div>
               </div>
+
             ) : selectedStats.isTargetHit ? (
               <div className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-4 flex items-center justify-between gap-4">
                 <div className="flex items-center gap-3">
@@ -1695,8 +1778,9 @@ export function PropTradingClient({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5">
-                  {accountStats.map((item) => {
+                  {accountStats.filter((item) => !item.isBlown).map((item) => {
                     const dollarRisk = item.latestEquity * (sizerRiskPct / 100);
+
                     let lotSize = 0;
                     if (sizerStopLoss > 0) {
                       if (sizerAsset === "forex") {

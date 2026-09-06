@@ -16,9 +16,9 @@ import type {
 import {
   createInvoiceAction,
   uploadPaymentInvoiceAction,
-  validateInvoiceAction,
   sendInvoiceEmailAction,
 } from "./actions";
+import { InvoiceStatusSelector } from "./InvoiceStatusSelector";
 
 const inputClasses =
   "w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-fog-100 outline-none transition-colors focus:border-gold/50";
@@ -66,7 +66,11 @@ export default async function InvoicesPage() {
 
   const synthesizedInvoices: Invoice[] = missingFromInvoices.map((rev) => {
     const invNumMatch = rev.notes?.match(/(INV-\d{4}-\d+|FLC-[A-Z0-9-]+)/i);
-    const invNum = invNumMatch ? invNumMatch[1].toUpperCase() : `FLE-${rev.recorded_on.replace(/-/g, "")}-${rev.id.slice(0, 4).toUpperCase()}`;
+    const recDate = rev.recorded_on || today;
+    const recId = rev.id || "rev";
+    const invNum = invNumMatch
+      ? invNumMatch[1].toUpperCase()
+      : `FLE-${recDate.replace(/-/g, "")}-${recId.slice(0, 4).toUpperCase()}`;
     return {
       id: `rev-${rev.id}`,
       invoice_number: invNum,
@@ -75,22 +79,22 @@ export default async function InvoicesPage() {
       service_id: rev.service_id,
       opportunity_id: rev.opportunity_id,
       revenue_record_id: rev.id,
-      title: rev.notes || `Revenue Record (${rev.recorded_on})`,
+      title: rev.notes || `Revenue Record (${recDate})`,
       status: revenueStatusToInvoiceStatus(rev.status),
       currency: rev.currency || "USD",
       subtotal: Number(rev.amount),
       tax_amount: 0,
       total: Number(rev.amount),
-      issued_on: rev.recorded_on,
-      due_on: rev.recorded_on,
+      issued_on: recDate,
+      due_on: recDate,
       notes: rev.notes,
-      created_at: rev.created_at,
-      updated_at: rev.created_at,
+      created_at: rev.created_at || new Date().toISOString(),
+      updated_at: rev.created_at || new Date().toISOString(),
     };
   });
 
   const invoiceList = [...rawInvoiceList, ...synthesizedInvoices].sort(
-    (a, b) => new Date(b.issued_on).getTime() - new Date(a.issued_on).getTime()
+    (a, b) => new Date(b.issued_on || today).getTime() - new Date(a.issued_on || today).getTime()
   );
 
   const totals = {
@@ -412,28 +416,19 @@ export default async function InvoicesPage() {
                     {formatCurrency(invoice.total, invoice.currency)}
                   </td>
                   <td className="px-4 py-3 text-fog-400 text-xs">
-                    {invoice.due_on ? new Date(invoice.due_on).toLocaleDateString() : "On receipt"}
+                    {invoice.due_on && !isNaN(new Date(invoice.due_on).getTime())
+                      ? new Date(invoice.due_on).toLocaleDateString()
+                      : "On receipt"}
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex flex-wrap items-center gap-2">
                       {/* Status Validation Selector */}
-                      <form action={validateInvoiceAction} className="inline-block">
-                        <input type="hidden" name="invoice_id" value={invoice.id} />
-                        <input type="hidden" name="client_id" value={invoice.client_id} />
-                        <input type="hidden" name="revenue_record_id" value={invoice.revenue_record_id ?? ""} />
-                        <select
-                          name="status"
-                          defaultValue={invoice.status}
-                          onChange={(e) => e.target.form?.requestSubmit()}
-                          className="text-[11px] bg-black/60 border border-white/15 rounded px-2 py-1 text-fog-200 outline-none focus:border-gold/50 cursor-pointer"
-                        >
-                          <option value="draft">Draft</option>
-                          <option value="sent">Sent / Pending</option>
-                          <option value="paid">✓ Validate & Paid</option>
-                          <option value="overdue">Mark Overdue</option>
-                          <option value="void">Void / Cancel</option>
-                        </select>
-                      </form>
+                      <InvoiceStatusSelector
+                        invoiceId={invoice.id}
+                        clientId={invoice.client_id}
+                        revenueRecordId={invoice.revenue_record_id}
+                        currentStatus={invoice.status}
+                      />
 
                       {/* Email Send button */}
                       <form action={sendInvoiceEmailAction} className="inline-block">

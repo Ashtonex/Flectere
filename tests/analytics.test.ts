@@ -197,3 +197,39 @@ test("Analytics Core: formatCurrency and formatPercent handle all edge cases saf
   assert.equal(formatPercent(0.245), "24.5%");
   assert.equal(formatPercent(1.5), "150.0%");
 });
+
+test("Analytics Core: blown account liquid capital is zeroed while accounting remains accurate", () => {
+  const blownAccount: TradingAccount = {
+    ...mockAccount,
+    id: "acc-blown",
+    phase: "blown",
+    status: "blown",
+    starting_balance: 100000,
+  };
+
+  const entries: PerformanceEntry[] = [
+    {
+      id: "e-b",
+      account_id: "acc-blown",
+      entry_date: "2026-09-01",
+      balance: 89000,
+      equity: 88500,
+      pnl: -11500,
+      source: "manual",
+      notes: null,
+      created_at: "2026-09-01T00:00:00Z",
+    },
+  ];
+
+  const analytics = computeAccountAnalytics(blownAccount, entries, [], []);
+  // Liquid figures MUST be 0 because it is blown
+  assert.equal(analytics.latestEquity, 0);
+  assert.equal(analytics.latestBalance, 0);
+  assert.equal(analytics.totalValue, 0);
+
+  // Accounting counts
+  const accounting = computeTradingDeskAccounting([blownAccount], [], []);
+  assert.equal(accounting.activeChallengeCount, 0);
+  assert.equal(accounting.activeFundedCount, 0);
+});
+
