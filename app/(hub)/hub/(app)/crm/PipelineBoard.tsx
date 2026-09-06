@@ -110,6 +110,10 @@ export function PipelineBoard({
   const [editMonthlyRetainer, setEditMonthlyRetainer] = useState<string>("");
   const [editRetainerMonths, setEditRetainerMonths] = useState<string>("12");
 
+  // Direct revenue interactive state
+  const [revenueClientId, setRevenueClientId] = useState<string>("");
+  const [revenueArmId, setRevenueArmId] = useState<string>("");
+
   const today = new Date().toISOString().slice(0, 10);
 
   // Calculate live actual cash extracted/recovered for each deal
@@ -442,6 +446,9 @@ export function PipelineBoard({
                         {a.name}
                       </option>
                     ))}
+                    {!arms.some((a) => a.name.toLowerCase() === "custom") && (
+                      <option value="custom">Custom</option>
+                    )}
                   </select>
                 </div>
               </div>
@@ -456,6 +463,9 @@ export function PipelineBoard({
                         {s.name}
                       </option>
                     ))}
+                    {!services.some((s) => s.name.toLowerCase() === "custom") && (
+                      <option value="custom">Custom</option>
+                    )}
                   </select>
                 </div>
                 <div>
@@ -698,6 +708,9 @@ export function PipelineBoard({
                         {a.name}
                       </option>
                     ))}
+                    {!arms.some((a) => a.name.toLowerCase() === "custom") && (
+                      <option value="custom">Custom</option>
+                    )}
                   </select>
                 </div>
                 <div>
@@ -709,6 +722,9 @@ export function PipelineBoard({
                         {s.name}
                       </option>
                     ))}
+                    {!services.some((s) => s.name.toLowerCase() === "custom") && (
+                      <option value="custom">Custom</option>
+                    )}
                   </select>
                 </div>
               </div>
@@ -1038,7 +1054,12 @@ export function PipelineBoard({
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className={labelClasses}>Client</label>
-                  <select name="client_id" className={inputClasses}>
+                  <select
+                    name="client_id"
+                    value={revenueClientId}
+                    onChange={(e) => setRevenueClientId(e.target.value)}
+                    className={inputClasses}
+                  >
                     <option value="">Unassigned</option>
                     {clients.map((c) => (
                       <option key={c.id} value={c.id}>
@@ -1049,18 +1070,40 @@ export function PipelineBoard({
                 </div>
                 <div>
                   <label className={labelClasses}>Business Arm</label>
-                  <select name="business_arm_id" className={inputClasses}>
+                  <select
+                    name="business_arm_id"
+                    value={revenueArmId}
+                    onChange={(e) => setRevenueArmId(e.target.value)}
+                    className={inputClasses}
+                  >
                     <option value="">No arm</option>
                     {arms.map((a) => (
                       <option key={a.id} value={a.id}>
                         {a.name}
                       </option>
                     ))}
+                    {!arms.some((a) => a.name.toLowerCase() === "custom") && (
+                      <option value="custom">Custom</option>
+                    )}
                   </select>
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className={labelClasses}>Service Offering</label>
+                  <select name="service_id" className={inputClasses}>
+                    <option value="">No service</option>
+                    {services.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name}
+                      </option>
+                    ))}
+                    {!services.some((s) => s.name.toLowerCase() === "custom") && (
+                      <option value="custom">Custom</option>
+                    )}
+                  </select>
+                </div>
                 <div>
                   <label className={labelClasses}>Category</label>
                   <select name="category" defaultValue="service_fee" className={inputClasses}>
@@ -1085,7 +1128,17 @@ export function PipelineBoard({
 
               <div>
                 <label className={labelClasses}>Link to Deal (Calculates Cash Recovery %)</label>
-                <select name="opportunity_id" className={inputClasses}>
+                <select
+                  name="opportunity_id"
+                  className={inputClasses}
+                  onChange={(e) => {
+                    const opp = initialOpportunities.find((o) => o.id === e.target.value);
+                    if (opp) {
+                      if (opp.client_id) setRevenueClientId(opp.client_id);
+                      if (opp.business_arm_id) setRevenueArmId(opp.business_arm_id);
+                    }
+                  }}
+                >
                   <option value="">No deal linked</option>
                   {initialOpportunities.map((o) => (
                     <option key={o.id} value={o.id}>

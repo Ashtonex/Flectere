@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { formatCurrency } from "@/lib/hub/analytics";
 import { armName, clientName, labelize, serviceName } from "@/lib/hub/crm";
 import { canSendEmail } from "@/lib/hub/email";
+import { revenueStatusToInvoiceStatus } from "@/lib/hub/invoices";
 import type {
   BusinessArm,
   Client,
@@ -9,6 +10,7 @@ import type {
   EmailMessage,
   Invoice,
   InvoiceItem,
+  RevenueRecord,
   Service,
 } from "@/lib/hub/types";
 import {
@@ -35,6 +37,7 @@ export default async function InvoicesPage() {
     { data: invoices },
     { data: items },
     { data: emails },
+    { data: revenue },
   ] = await Promise.all([
     supabase.from("clients").select("*").order("name"),
     supabase.from("business_arms").select("*").order("name"),
@@ -43,16 +46,52 @@ export default async function InvoicesPage() {
     supabase.from("invoices").select("*").order("created_at", { ascending: false }),
     supabase.from("invoice_items").select("*"),
     supabase.from("email_messages").select("*").order("created_at", { ascending: false }).limit(8),
+    supabase.from("revenue_records").select("*"),
   ]);
 
   const clientList = (clients ?? []) as Client[];
   const armList = (arms ?? []) as BusinessArm[];
   const serviceList = (services ?? []) as Service[];
   const opportunityList = (opportunities ?? []) as CrmOpportunity[];
-  const invoiceList = (invoices ?? []) as Invoice[];
+  const rawInvoiceList = (invoices ?? []) as Invoice[];
   const itemList = (items ?? []) as InvoiceItem[];
   const emailList = (emails ?? []) as EmailMessage[];
+  const revenueList = (revenue ?? []) as RevenueRecord[];
   const today = new Date().toISOString().slice(0, 10);
+
+  // Self-healing synchronization: synthesize any revenue record that doesn't yet have an invoice
+  const missingFromInvoices = revenueList.filter(
+    (rev) => !rawInvoiceList.some((inv) => inv.revenue_record_id === rev.id)
+  );
+
+  const synthesizedInvoices: Invoice[] = missingFromInvoices.map((rev) => {
+    const invNumMatch = rev.notes?.match(/(INV-\d{4}-\d+|FLC-[A-Z0-9-]+)/i);
+    const invNum = invNumMatch ? invNumMatch[1].toUpperCase() : `FLE-${rev.recorded_on.replace(/-/g, "")}-${rev.id.slice(0, 4).toUpperCase()}`;
+    return {
+      id: `rev-${rev.id}`,
+      invoice_number: invNum,
+      client_id: rev.client_id ?? "",
+      business_arm_id: rev.business_arm_id,
+      service_id: rev.service_id,
+      opportunity_id: rev.opportunity_id,
+      revenue_record_id: rev.id,
+      title: rev.notes || `Revenue Record (${rev.recorded_on})`,
+      status: revenueStatusToInvoiceStatus(rev.status),
+      currency: rev.currency || "USD",
+      subtotal: Number(rev.amount),
+      tax_amount: 0,
+      total: Number(rev.amount),
+      issued_on: rev.recorded_on,
+      due_on: rev.recorded_on,
+      notes: rev.notes,
+      created_at: rev.created_at,
+      updated_at: rev.created_at,
+    };
+  });
+
+  const invoiceList = [...rawInvoiceList, ...synthesizedInvoices].sort(
+    (a, b) => new Date(b.issued_on).getTime() - new Date(a.issued_on).getTime()
+  );
 
   const totals = {
     draft: invoiceList.filter((invoice) => invoice.status === "draft").length,
@@ -136,6 +175,9 @@ export default async function InvoicesPage() {
                       {arm.name}
                     </option>
                   ))}
+                  {!armList.some((a) => a.name.toLowerCase() === "custom") && (
+                    <option value="custom">Custom</option>
+                  )}
                 </select>
               </div>
             </div>
@@ -150,6 +192,9 @@ export default async function InvoicesPage() {
                       {service.name}
                     </option>
                   ))}
+                  {!serviceList.some((s) => s.name.toLowerCase() === "custom") && (
+                    <option value="custom">Custom</option>
+                  )}
                 </select>
               </div>
               <div>
@@ -217,7 +262,7 @@ export default async function InvoicesPage() {
           </div>
 
           <form action={uploadPaymentInvoiceAction} className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-3 gap-3">
               <div>
                 <label className={labelClasses}>Client *</label>
                 <select name="client_id" required className={inputClasses}>
@@ -238,6 +283,23 @@ export default async function InvoicesPage() {
                       {arm.name}
                     </option>
                   ))}
+                  {!armList.some((a) => a.name.toLowerCase() === "custom") && (
+                    <option value="custom">Custom</option>
+                  )}
+                </select>
+              </div>
+              <div>
+                <label className={labelClasses}>Service Offering</label>
+                <select name="service_id" className={inputClasses}>
+                  <option value="">No service</option>
+                  {serviceList.map((service) => (
+                    <option key={service.id} value={service.id}>
+                      {service.name}
+                    </option>
+                  ))}
+                  {!serviceList.some((s) => s.name.toLowerCase() === "custom") && (
+                    <option value="custom">Custom</option>
+                  )}
                 </select>
               </div>
             </div>

@@ -237,3 +237,39 @@ export async function deleteDeskExpenseAction(formData: FormData) {
   await supabase.from("expenses").delete().eq("id", id);
   revalidateTrading();
 }
+
+export async function bulkImportPerformanceEntriesAction(formData: FormData) {
+  const supabase = await createClient();
+
+  const accountId = String(formData.get("account_id") || "");
+  if (!accountId) return;
+
+  const entriesJson = String(formData.get("entries_json") || "");
+  if (!entriesJson) return;
+
+  try {
+    const rawList = JSON.parse(entriesJson);
+    if (!Array.isArray(rawList) || rawList.length === 0) return;
+
+    const rows = rawList
+      .filter((item) => item && item.entry_date)
+      .map((item) => ({
+        account_id: accountId,
+        entry_date: String(item.entry_date),
+        balance: item.balance != null && !isNaN(Number(item.balance)) ? Number(item.balance) : null,
+        equity: item.equity != null && !isNaN(Number(item.equity)) ? Number(item.equity) : null,
+        pnl: item.pnl != null && !isNaN(Number(item.pnl)) ? Number(item.pnl) : null,
+        source: "csv" as const,
+        notes: item.notes ? String(item.notes).trim() : null,
+      }));
+
+    if (rows.length > 0) {
+      await supabase.from("performance_entries").insert(rows);
+    }
+  } catch (err) {
+    console.error("Failed to bulk import entries:", err);
+  }
+
+  revalidateTrading();
+}
+

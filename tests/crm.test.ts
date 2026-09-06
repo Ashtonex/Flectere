@@ -8,6 +8,11 @@ import {
   openPipelineValue,
   armRevenueRows,
 } from "@/lib/hub/crm";
+import {
+  invoiceNumber,
+  invoiceStatusToRevenueStatus,
+  revenueStatusToInvoiceStatus,
+} from "@/lib/hub/invoices";
 import type { BusinessArm, CrmOpportunity, Lead, RevenueRecord, Service } from "@/lib/hub/types";
 
 test("CRM Core: calculateLeadValuation matches sector keywords", () => {
@@ -260,4 +265,24 @@ test("CRM Core: armRevenueRows aggregates across portfolio entities", () => {
   assert.equal(rows[0].serviceCount, 1);
   assert.equal(rows[0].receivedRevenue, 25000);
   assert.equal(rows[0].progress, 0.25); // 25,000 / 100,000
+});
+
+test("Invoices Core: bidirectional status synchronization between revenue and invoices", () => {
+  assert.equal(revenueStatusToInvoiceStatus("received"), "paid");
+  assert.equal(revenueStatusToInvoiceStatus("overdue"), "overdue");
+  assert.equal(revenueStatusToInvoiceStatus("invoiced"), "sent");
+  assert.equal(revenueStatusToInvoiceStatus("expected"), "draft");
+  assert.equal(revenueStatusToInvoiceStatus("cancelled"), "void");
+
+  assert.equal(invoiceStatusToRevenueStatus("paid"), "received");
+  assert.equal(invoiceStatusToRevenueStatus("overdue"), "overdue");
+  assert.equal(invoiceStatusToRevenueStatus("sent"), "invoiced");
+  assert.equal(invoiceStatusToRevenueStatus("draft"), "expected");
+  assert.equal(invoiceStatusToRevenueStatus("void"), "cancelled");
+});
+
+test("Invoices Core: invoiceNumber produces standard Flectere invoice identifier", () => {
+  const inv = invoiceNumber();
+  assert.ok(inv.startsWith("FLE-"));
+  assert.equal(inv.length, 17);
 });

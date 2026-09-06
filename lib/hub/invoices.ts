@@ -4,6 +4,40 @@ import type { BusinessArm, Client, Invoice, InvoiceItem, Service } from "./types
 export const invoiceStatuses: Invoice["status"][] = ["draft", "sent", "paid", "overdue", "void"];
 export const documentTypes = ["general", "contract", "invoice", "statement", "report", "identity", "other"];
 
+export function revenueStatusToInvoiceStatus(status: string): Invoice["status"] {
+  switch (status) {
+    case "received":
+      return "paid";
+    case "overdue":
+      return "overdue";
+    case "invoiced":
+      return "sent";
+    case "expected":
+      return "draft";
+    case "cancelled":
+      return "void";
+    default:
+      return "draft";
+  }
+}
+
+export function invoiceStatusToRevenueStatus(status: Invoice["status"]): string {
+  switch (status) {
+    case "paid":
+      return "received";
+    case "overdue":
+      return "overdue";
+    case "sent":
+      return "invoiced";
+    case "draft":
+      return "expected";
+    case "void":
+      return "cancelled";
+    default:
+      return "invoiced";
+  }
+}
+
 export function invoiceNumber() {
   const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, "");
   const suffix = Math.random().toString(36).slice(2, 6).toUpperCase();

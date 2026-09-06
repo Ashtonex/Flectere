@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { slugify } from "@/lib/hub/crm";
+import { invoiceNumber, revenueStatusToInvoiceStatus } from "@/lib/hub/invoices";
 
 function nullableString(formData: FormData, key: string) {
   return String(formData.get(key) || "").trim() || null;
@@ -13,10 +14,29 @@ function nullableNumber(formData: FormData, key: string) {
   return raw ? Number(raw) : null;
 }
 
+async function resolveArmId(supabase: any, armIdOrSlug: string | null) {
+  if (!armIdOrSlug) return null;
+  if (armIdOrSlug.toLowerCase() === "custom") {
+    const { data } = await supabase.from("business_arms").select("id").eq("slug", "custom").maybeSingle();
+    return data?.id ?? null;
+  }
+  return armIdOrSlug;
+}
+
+async function resolveServiceId(supabase: any, serviceIdOrName: string | null) {
+  if (!serviceIdOrName) return null;
+  if (serviceIdOrName.toLowerCase() === "custom") {
+    const { data } = await supabase.from("services").select("id").eq("name", "Custom").maybeSingle();
+    return data?.id ?? null;
+  }
+  return serviceIdOrName;
+}
+
 function revalidateCrm() {
   revalidatePath("/hub");
   revalidatePath("/hub/dashboard");
   revalidatePath("/hub/crm");
+  revalidatePath("/hub/invoices");
   revalidatePath("/hub/arms");
   revalidatePath("/hub/clients");
 }
@@ -45,7 +65,8 @@ export async function createBusinessArmAction(formData: FormData) {
 export async function createServiceAction(formData: FormData) {
   const supabase = await createClient();
 
-  const businessArmId = String(formData.get("business_arm_id") || "");
+  const rawArmId = String(formData.get("business_arm_id") || "");
+  const businessArmId = await resolveArmId(supabase, rawArmId);
   const name = String(formData.get("name") || "").trim();
   if (!businessArmId || !name) return;
 
@@ -66,12 +87,15 @@ export async function createOpportunityAction(formData: FormData) {
   const title = String(formData.get("title") || "").trim();
   if (!title) return;
 
+  const businessArmId = await resolveArmId(supabase, nullableString(formData, "business_arm_id"));
+  const serviceId = await resolveServiceId(supabase, nullableString(formData, "service_id"));
+
   await supabase.from("crm_opportunities").insert({
     title,
     client_id: nullableString(formData, "client_id"),
     lead_id: nullableString(formData, "lead_id"),
-    business_arm_id: nullableString(formData, "business_arm_id"),
-    service_id: nullableString(formData, "service_id"),
+    business_arm_id: businessArmId,
+    service_id: serviceId,
     stage: String(formData.get("stage") || "lead"),
     value: nullableNumber(formData, "value"),
     probability: Number(formData.get("probability") || 25),
@@ -89,6 +113,8 @@ export async function createActivityAction(formData: FormData) {
   const activityDate = String(formData.get("activity_date") || "").trim();
   if (!subject || !activityDate) return;
 
+  const businessArmId = await resolveArmId(supabase, nullableString(formData, "business_arm_id"));
+
   await supabase.from("crm_activities").insert({
     subject,
     activity_date: activityDate,
@@ -96,7 +122,7 @@ export async function createActivityAction(formData: FormData) {
     client_id: nullableString(formData, "client_id"),
     lead_id: nullableString(formData, "lead_id"),
     opportunity_id: nullableString(formData, "opportunity_id"),
-    business_arm_id: nullableString(formData, "business_arm_id"),
+    business_arm_id: businessArmId,
     outcome: nullableString(formData, "outcome"),
     next_step: nullableString(formData, "next_step"),
   });
@@ -111,17 +137,88 @@ export async function createRevenueRecordAction(formData: FormData) {
   const recordedOn = String(formData.get("recorded_on") || "").trim();
   if (!amountRaw || !recordedOn) return;
 
-  await supabase.from("revenue_records").insert({
-    amount: Number(amountRaw),
-    recorded_on: recordedOn,
-    client_id: nullableString(formData, "client_id"),
-    business_arm_id: nullableString(formData, "business_arm_id"),
-    service_id: nullableString(formData, "service_id"),
-    opportunity_id: nullableString(formData, "opportunity_id"),
-    category: String(formData.get("category") || "service_fee"),
-    status: String(formData.get("status") || "received"),
-    notes: nullableString(formData, "notes"),
-  });
+  let clientId = nullableString(formData, "client_id");
+  const opportunityId = nullableString(formData, "opportunity_id");
+  const businessArmId = await resolveArmId(supabase, nullableString(formData, "business_arm_id"));
+  const serviceId = await resolveServiceId(supabase, nullableString(formData, "service_id"));
+  const category = String(formData.get("category") || "service_fee");
+  const status = String(formData.get("status") || "received");
+  const notes = nullableString(formData, "notes");
+  const amount = Number(amountRaw);
+
+  // Auto-infer client_id from opportunity if client_id was left blank
+  if (!clientId && opportunityId) {
+    const { data: opp } = await supabase
+      .from("crm_opportunities")
+      .select("client_id")
+      .eq("id", opportunityId)
+      .maybeSingle();
+    if (opp?.client_id) {
+      clientId = opp.client_id;
+    }
+  }
+
+  const { data: revenueRecord } = await supabase
+    .from("revenue_records")
+    .insert({
+      amount,
+      recorded_on: recordedOn,
+      client_id: clientId,
+      business_arm_id: businessArmId,
+      service_id: serviceId,
+      opportunity_id: opportunityId,
+      category,
+      status,
+      notes,
+    })
+    .select("id")
+    .single();
+
+  // Create corresponding invoice so CRM and Invoices pages stay 100% unified
+  const invStatus = revenueStatusToInvoiceStatus(status);
+  let targetClientId = clientId;
+  if (!targetClientId) {
+    const { data: firstClient } = await supabase.from("clients").select("id").limit(1).maybeSingle();
+    targetClientId = firstClient?.id ?? null;
+  }
+
+  if (targetClientId) {
+    const title = notes || `Revenue Entry - ${recordedOn}`;
+    const invNumMatch = notes?.match(/(INV-\d{4}-\d+|FLC-[A-Z0-9-]+)/i);
+    const invNum = invNumMatch ? invNumMatch[1].toUpperCase() : invoiceNumber();
+
+    const { data: invoice } = await supabase
+      .from("invoices")
+      .insert({
+        invoice_number: invNum,
+        client_id: targetClientId,
+        business_arm_id: businessArmId,
+        service_id: serviceId,
+        opportunity_id: opportunityId,
+        revenue_record_id: revenueRecord?.id ?? null,
+        title,
+        currency: "USD",
+        subtotal: amount,
+        tax_amount: 0,
+        total: amount,
+        issued_on: recordedOn,
+        due_on: recordedOn,
+        notes,
+        status: invStatus,
+      })
+      .select("id")
+      .single();
+
+    if (invoice?.id) {
+      await supabase.from("invoice_items").insert({
+        invoice_id: invoice.id,
+        description: title,
+        quantity: 1,
+        unit_price: amount,
+        line_total: amount,
+      });
+    }
+  }
 
   revalidateCrm();
 }
@@ -145,8 +242,8 @@ export async function updateOpportunityAction(formData: FormData) {
   if (!id || !title) return;
 
   const clientId = nullableString(formData, "client_id");
-  const businessArmId = nullableString(formData, "business_arm_id");
-  const serviceId = nullableString(formData, "service_id");
+  const businessArmId = await resolveArmId(supabase, nullableString(formData, "business_arm_id"));
+  const serviceId = await resolveServiceId(supabase, nullableString(formData, "service_id"));
   const stage = String(formData.get("stage") || "lead");
   const value = nullableNumber(formData, "value");
   const setupFee = nullableNumber(formData, "setup_fee");
