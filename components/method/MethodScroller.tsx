@@ -31,7 +31,7 @@ export default function MethodScroller() {
   });
 
   return (
-    <section ref={containerRef} className="relative h-[300vh] bg-ink-950">
+    <section ref={containerRef} className="relative h-[200vh] bg-ink-950">
       <div className="sticky top-0 h-screen overflow-hidden">
         <div className="absolute inset-0 opacity-80">
           {webglOk && <MethodScene progressRef={progressRef} inView={inView} />}

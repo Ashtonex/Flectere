@@ -42,48 +42,30 @@ const LAYERS = [
 export default function OrganogramSection() {
   const containerRef = useRef<HTMLDivElement>(null);
   const inView = useInView(containerRef, { margin: "150px" });
-  const progressRef = useRef(0);
+  const progressRef = useRef(0.5);
   const [activeLayer, setActiveLayer] = useState(0);
   const selectedLayer = LAYERS[activeLayer];
   const webglOk = useWebGLSupported();
 
-  const { scrollYProgress } = useScroll({
-    target: containerRef,
-    offset: ["start start", "end end"],
-  });
-
-  const panelY = useTransform(scrollYProgress, [0, 1], [60, -80]);
-  const panelOpacity = useTransform(scrollYProgress, [0, 0.16, 0.82, 1], [0, 1, 1, 0]);
-
-  useMotionValueEvent(scrollYProgress, "change", (value) => {
-    progressRef.current = value;
-    const index = Math.min(LAYERS.length - 1, Math.floor(value * LAYERS.length));
-    setActiveLayer((current) => (current === index ? current : index));
-  });
-
   return (
-    <section ref={containerRef} className="relative h-[260vh] bg-ink-950">
-      <div className="sticky top-0 h-screen overflow-hidden">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_45%,rgba(198,161,89,0.18),transparent_34rem)]" />
-        <div className="absolute inset-0 bg-grid opacity-[0.08]" />
-        <div className="absolute inset-0">
-          {webglOk ? (
-            <CoreOrganogramScene activeLayer={activeLayer} progressRef={progressRef} inView={inView} />
-          ) : null}
-        </div>
-        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,#05070A_0%,rgba(5,7,10,0.1)_42%,#05070A_100%)]" />
+    <section ref={containerRef} className="relative min-h-[85vh] overflow-hidden bg-ink-950 py-20 md:py-28 flex items-center border-t border-white/5">
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_45%,rgba(198,161,89,0.18),transparent_34rem)]" />
+      <div className="absolute inset-0 bg-grid opacity-[0.08]" />
+      <div className="absolute inset-0">
+        {webglOk ? (
+          <CoreOrganogramScene activeLayer={activeLayer} progressRef={progressRef} inView={inView} />
+        ) : null}
+      </div>
+      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,#05070A_0%,rgba(5,7,10,0.1)_42%,#05070A_100%)]" />
 
-        <Container className="relative z-10 flex h-full items-center">
+      <Container className="relative z-10 flex items-center">
+        <div className="alive-panel max-w-md rounded-xl border border-white/10 bg-ink-950/90 p-5 md:p-6 shadow-2xl">
           <motion.div
-            style={{ y: panelY, opacity: panelOpacity }}
-            className="alive-panel max-w-md rounded-xl border border-white/10 bg-ink-950/62 p-5 backdrop-blur-xl md:p-6"
+            key={selectedLayer.key}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
           >
-            <motion.div
-              key={selectedLayer.key}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.42, ease: [0.16, 1, 0.3, 1] }}
-            >
               <p className="eyebrow text-gold">Operating Universe</p>
               <h2 className="mt-3 font-display text-3xl font-semibold leading-tight text-engraved md:text-4xl">
               {selectedLayer.title}
@@ -150,9 +132,8 @@ export default function OrganogramSection() {
                 </div>
               </motion.div>
             )}
-          </motion.div>
+          </div>
         </Container>
-      </div>
-    </section>
+      </section>
   );
 }
