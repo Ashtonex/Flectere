@@ -1,7 +1,8 @@
 "use client";
 
+import { useRef } from "react";
 import dynamic from "next/dynamic";
-import { motion } from "framer-motion";
+import { motion, useInView } from "framer-motion";
 import Container from "@/components/ui/Container";
 import Button from "@/components/ui/Button";
 import HeroFallback from "@/components/visuals/HeroFallback";
@@ -12,14 +13,16 @@ const HeroScene = dynamic(() => import("@/components/visuals/HeroScene"), {
 });
 
 export default function Hero() {
+  const sectionRef = useRef<HTMLElement>(null);
+  const inView = useInView(sectionRef, { margin: "150px" });
   const webglOk = useWebGLSupported();
 
   return (
-    <section className="relative flex min-h-[100svh] items-center overflow-hidden bg-ink-950 pt-20">
+    <section ref={sectionRef} className="relative flex min-h-[100svh] items-center overflow-hidden bg-ink-950 pt-20">
       <div className="absolute inset-0 bg-grid opacity-[0.12]" />
       <div className="absolute inset-0 bg-radial-fade" />
       <div className="absolute inset-0">
-        {webglOk ? <HeroScene /> : <HeroFallback />}
+        {webglOk ? <HeroScene inView={inView} /> : <HeroFallback />}
       </div>
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-ink-950 via-ink-950/40 to-ink-950/70" />
 

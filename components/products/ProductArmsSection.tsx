@@ -1,5 +1,6 @@
 "use client";
 
+import { useRef } from "react";
 import dynamic from "next/dynamic";
 import {
   BadgeDollarSign,
@@ -16,7 +17,7 @@ import {
   Zap,
   type LucideIcon,
 } from "lucide-react";
-import { motion, useScroll, useTransform } from "framer-motion";
+import { motion, useInView, useScroll, useTransform } from "framer-motion";
 import Container from "@/components/ui/Container";
 import SectionHeading from "@/components/ui/SectionHeading";
 import RevealOnScroll from "@/components/ui/RevealOnScroll";
@@ -48,18 +49,23 @@ export default function ProductArmsSection({
 }: {
   compact?: boolean;
 }) {
+  const sectionRef = useRef<HTMLElement>(null);
+  const inView = useInView(sectionRef, { margin: "150px" });
   const items = compact ? productArms.slice(0, 6) : productArms;
-  const { scrollYProgress } = useScroll();
-  const drift = useTransform(scrollYProgress, [0, 1], [0, -120]);
+  const { scrollYProgress } = useScroll({
+    target: sectionRef,
+    offset: ["start end", "end start"],
+  });
+  const drift = useTransform(scrollYProgress, [0, 1], [0, -80]);
 
   return (
-    <section className="relative overflow-hidden border-t border-white/5 bg-ink-950 py-24 md:py-32">
+    <section ref={sectionRef} className="relative overflow-hidden border-t border-white/5 bg-ink-950 py-24 md:py-32">
       <motion.div
         style={{ y: drift }}
         className="pointer-events-none absolute inset-x-0 top-0 h-[42rem] opacity-70"
       >
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_35%,rgba(198,161,89,0.16),transparent_34rem)]" />
-        <ProductConstellationScene />
+        <ProductConstellationScene inView={inView} />
       </motion.div>
       <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,#05070A_0%,rgba(5,7,10,0.62)_22%,#05070A_72%)]" />
 

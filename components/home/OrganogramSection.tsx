@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import dynamic from "next/dynamic";
-import { motion, useMotionValueEvent, useScroll, useTransform } from "framer-motion";
+import { motion, useInView, useMotionValueEvent, useScroll, useTransform } from "framer-motion";
 import Container from "@/components/ui/Container";
 import useWebGLSupported from "@/components/visuals/useWebGLSupported";
 import { cn } from "@/lib/utils";
@@ -41,6 +41,7 @@ const LAYERS = [
 
 export default function OrganogramSection() {
   const containerRef = useRef<HTMLDivElement>(null);
+  const inView = useInView(containerRef, { margin: "150px" });
   const progressRef = useRef(0);
   const [activeLayer, setActiveLayer] = useState(0);
   const selectedLayer = LAYERS[activeLayer];
@@ -61,13 +62,13 @@ export default function OrganogramSection() {
   });
 
   return (
-    <section ref={containerRef} className="relative h-[320vh] bg-ink-950">
+    <section ref={containerRef} className="relative h-[260vh] bg-ink-950">
       <div className="sticky top-0 h-screen overflow-hidden">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_45%,rgba(198,161,89,0.18),transparent_34rem)]" />
         <div className="absolute inset-0 bg-grid opacity-[0.08]" />
         <div className="absolute inset-0">
           {webglOk ? (
-            <CoreOrganogramScene activeLayer={activeLayer} progressRef={progressRef} />
+            <CoreOrganogramScene activeLayer={activeLayer} progressRef={progressRef} inView={inView} />
           ) : null}
         </div>
         <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,#05070A_0%,rgba(5,7,10,0.1)_42%,#05070A_100%)]" />

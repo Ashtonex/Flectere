@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import dynamic from "next/dynamic";
-import { motion, useMotionValueEvent, useScroll } from "framer-motion";
+import { motion, useInView, useMotionValueEvent, useScroll } from "framer-motion";
 import Container from "@/components/ui/Container";
 import useWebGLSupported from "@/components/visuals/useWebGLSupported";
 import { methodSteps, mottos } from "@/lib/content";
@@ -14,6 +14,7 @@ const MethodScene = dynamic(() => import("@/components/visuals/MethodScene"), {
 
 export default function MethodScroller() {
   const containerRef = useRef<HTMLDivElement>(null);
+  const inView = useInView(containerRef, { margin: "150px" });
   const progressRef = useRef(0);
   const [activeIndex, setActiveIndex] = useState(0);
   const webglOk = useWebGLSupported();
@@ -30,10 +31,10 @@ export default function MethodScroller() {
   });
 
   return (
-    <section ref={containerRef} className="relative h-[420vh] bg-ink-950">
+    <section ref={containerRef} className="relative h-[300vh] bg-ink-950">
       <div className="sticky top-0 h-screen overflow-hidden">
         <div className="absolute inset-0 opacity-80">
-          {webglOk && <MethodScene progressRef={progressRef} />}
+          {webglOk && <MethodScene progressRef={progressRef} inView={inView} />}
         </div>
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-ink-950 via-ink-950/10 to-ink-950" />
         <div className="pointer-events-none absolute inset-0 bg-grid opacity-[0.08]" />

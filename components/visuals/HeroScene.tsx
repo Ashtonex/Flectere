@@ -176,10 +176,11 @@ function Rig() {
   return null;
 }
 
-export default function HeroScene() {
+export default function HeroScene({ inView = true }: { inView?: boolean }) {
   useForceResize();
   return (
     <Canvas
+      frameloop={inView ? "always" : "never"}
       dpr={[1, 1.5]}
       camera={{ position: [0, 0, 8.5], fov: 45 }}
       gl={{ antialias: true, alpha: true }}

@@ -126,11 +126,12 @@ function ProductSystem() {
   );
 }
 
-export default function ProductConstellationScene() {
+export default function ProductConstellationScene({ inView = true }: { inView?: boolean }) {
   useForceResize();
 
   return (
     <Canvas
+      frameloop={inView ? "always" : "never"}
       dpr={[1, 1.5]}
       camera={{ position: [0, 0.25, 6.8], fov: 42 }}
       gl={{ antialias: true, alpha: true }}

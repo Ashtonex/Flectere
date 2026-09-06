@@ -11,7 +11,7 @@
 }
 
 html {
-  scroll-behavior: smooth;
+  /* Native scrolling for smooth, non-dragging momentum */
 }
 
 body {
@@ -24,9 +24,6 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  html {
-    scroll-behavior: auto;
-  }
   *,
   *::before,
   *::after {
@@ -62,8 +59,8 @@ body {
   inset: 0;
   pointer-events: none;
   z-index: 60;
-  opacity: 0.055;
-  mix-blend-mode: overlay;
+  opacity: 0.03;
+  transform: translateZ(0);
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
@@ -72,8 +69,8 @@ body {
   inset: 0;
   pointer-events: none;
   z-index: 55;
-  opacity: 0.18;
-  mix-blend-mode: soft-light;
+  opacity: 0.08;
+  transform: translateZ(0);
   background-image:
     radial-gradient(circle at 22% 18%, rgba(198, 161, 89, 0.22), transparent 18rem),
     radial-gradient(circle at 80% 72%, rgba(155, 161, 168, 0.18), transparent 22rem),

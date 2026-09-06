@@ -9,8 +9,8 @@ export default function SiteAura() {
   const [mounted, setMounted] = useState(false);
   const mouseX = useMotionValue(50);
   const mouseY = useMotionValue(34);
-  const smoothX = useSpring(mouseX, { stiffness: 80, damping: 28, mass: 0.4 });
-  const smoothY = useSpring(mouseY, { stiffness: 80, damping: 28, mass: 0.4 });
+  const smoothX = useSpring(mouseX, { stiffness: 160, damping: 30, mass: 0.2 });
+  const smoothY = useSpring(mouseY, { stiffness: 160, damping: 30, mass: 0.2 });
   const glow = useMotionTemplate`radial-gradient(circle at ${smoothX}% ${smoothY}%, rgba(198,161,89,0.18), rgba(155,161,168,0.06) 18rem, transparent 38rem)`;
 
   useEffect(() => {
