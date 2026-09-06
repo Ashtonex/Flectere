@@ -214,12 +214,17 @@ body {
 }
 
 .living-grid {
+  position: absolute;
+  inset: -144px;
   background-image:
     linear-gradient(rgba(198, 161, 89, 0.09) 1px, transparent 1px),
     linear-gradient(90deg, rgba(155, 161, 168, 0.08) 1px, transparent 1px);
   background-size: 72px 72px;
   animation: living-grid-drift 24s linear infinite;
   mask-image: radial-gradient(circle at 50% 38%, black, transparent 72%);
+  -webkit-mask-image: radial-gradient(circle at 50% 38%, black, transparent 72%);
+  will-change: transform;
+  transform: translate3d(0, 0, 0);
 }
 
 .scanline-field {
@@ -233,10 +238,12 @@ body {
       transparent 12px
     );
   animation: scanline-pass 9s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+  will-change: transform;
 }
 
 .orbit-sigil {
   animation: orbit-sigil 32s linear infinite;
+  will-change: transform;
 }
 
 .perspective-shell {
@@ -245,10 +252,10 @@ body {
 
 @keyframes living-grid-drift {
   from {
-    background-position: 0 0, 0 0;
+    transform: translate3d(0, 0, 0);
   }
   to {
-    background-position: 72px 144px, 144px 72px;
+    transform: translate3d(72px, 72px, 0);
   }
 }
 

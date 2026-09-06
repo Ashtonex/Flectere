@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import Navbar from "@/components/layout/Navbar";
 import Footer from "@/components/layout/Footer";
+import SiteAura from "@/components/layout/SiteAura";
+import ScrollSigilReveal from "@/components/visuals/ScrollSigilReveal";
 
 export const metadata: Metadata = {
   title: {
@@ -25,6 +27,8 @@ export default function RootLayout({
 }) {
   return (
     <>
+      <SiteAura />
+      <ScrollSigilReveal />
       <div className="vignette-overlay" />
       <div className="noise-overlay" />
       <Navbar />
