@@ -41,34 +41,51 @@ const LAYERS = [
 
 export default function OrganogramSection() {
   const containerRef = useRef<HTMLDivElement>(null);
-  const inView = useInView(containerRef, { margin: "150px" });
-  const progressRef = useRef(0.5);
+  const inView = useInView(containerRef, { margin: "120px" });
+  const progressRef = useRef(0);
   const [activeLayer, setActiveLayer] = useState(0);
   const selectedLayer = LAYERS[activeLayer];
   const webglOk = useWebGLSupported();
 
-  return (
-    <section ref={containerRef} className="relative min-h-[85vh] overflow-hidden bg-ink-950 py-20 md:py-28 flex items-center border-t border-white/5">
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_45%,rgba(198,161,89,0.18),transparent_34rem)]" />
-      <div className="absolute inset-0 bg-grid opacity-[0.08]" />
-      <div className="absolute inset-0">
-        {webglOk ? (
-          <CoreOrganogramScene activeLayer={activeLayer} progressRef={progressRef} inView={inView} />
-        ) : null}
-      </div>
-      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,#05070A_0%,rgba(5,7,10,0.1)_42%,#05070A_100%)]" />
+  const { scrollYProgress } = useScroll({
+    target: containerRef,
+    offset: ["start start", "end end"],
+  });
 
-      <Container className="relative z-10 flex items-center">
-        <div className="alive-panel max-w-md rounded-xl border border-white/10 bg-ink-950/90 p-5 md:p-6 shadow-2xl">
+  const panelY = useTransform(scrollYProgress, [0, 1], [30, -30]);
+
+  useMotionValueEvent(scrollYProgress, "change", (value) => {
+    progressRef.current = value;
+    const index = Math.min(LAYERS.length - 1, Math.floor(value * LAYERS.length));
+    setActiveLayer((current) => (current === index ? current : index));
+  });
+
+  return (
+    <section ref={containerRef} className="relative h-[220vh] bg-ink-950">
+      <div className="sticky top-0 h-screen overflow-hidden">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_45%,rgba(198,161,89,0.18),transparent_34rem)]" />
+        <div className="absolute inset-0 bg-grid opacity-[0.08]" />
+        <div className="absolute inset-0">
+          {webglOk ? (
+            <CoreOrganogramScene activeLayer={activeLayer} progressRef={progressRef} inView={inView} />
+          ) : null}
+        </div>
+        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,#05070A_0%,rgba(5,7,10,0.1)_42%,#05070A_100%)]" />
+
+        <Container className="relative z-10 flex h-full items-center">
           <motion.div
-            key={selectedLayer.key}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+            style={{ y: panelY, willChange: "transform" }}
+            className="alive-panel max-w-md rounded-xl border border-white/10 bg-ink-950/88 p-5 md:p-6 shadow-[0_16px_48px_rgba(0,0,0,0.85)]"
           >
+            <motion.div
+              key={selectedLayer.key}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+            >
               <p className="eyebrow text-gold">Operating Universe</p>
               <h2 className="mt-3 font-display text-3xl font-semibold leading-tight text-engraved md:text-4xl">
-              {selectedLayer.title}
+                {selectedLayer.title}
               </h2>
               <p className="mt-4 text-sm leading-7 text-fog-400">
                 {selectedLayer.body}
@@ -80,13 +97,19 @@ export default function OrganogramSection() {
                 <button
                   key={layer.key}
                   type="button"
-                  onClick={() => setActiveLayer(index)}
-                  onPointerEnter={() => setActiveLayer(index)}
+                  onClick={() => {
+                    setActiveLayer(index);
+                    progressRef.current = (index + 0.5) / LAYERS.length;
+                  }}
+                  onPointerEnter={() => {
+                    setActiveLayer(index);
+                    progressRef.current = (index + 0.5) / LAYERS.length;
+                  }}
                   className={cn(
                     "rounded-md border px-3 py-2 text-[10px] uppercase tracking-widest2 transition-colors",
                     activeLayer === index
                       ? "border-gold/50 bg-gold/10 text-gold"
-                      : "border-white/10 bg-white/[0.02] text-fog-500"
+                      : "border-white/10 bg-white/[0.02] text-fog-500 hover:text-fog-200"
                   )}
                 >
                   {layer.label}
@@ -98,9 +121,9 @@ export default function OrganogramSection() {
               {selectedLayer.signals.map((signal, index) => (
                 <motion.div
                   key={signal}
-                  initial={{ opacity: 0, y: 8 }}
+                  initial={{ opacity: 0, y: 6 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.35, delay: index * 0.04 }}
+                  transition={{ duration: 0.3, delay: index * 0.03 }}
                   className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-3"
                 >
                   <span className="block text-[10px] uppercase tracking-widest2 text-fog-600">
@@ -132,8 +155,9 @@ export default function OrganogramSection() {
                 </div>
               </motion.div>
             )}
-          </div>
+          </motion.div>
         </Container>
-      </section>
+      </div>
+    </section>
   );
 }
