@@ -13,7 +13,7 @@ export default async function HubAppLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data } = await supabase.auth.getClaims();
   const claims = data?.claims as JwtClaims | undefined;
 
@@ -29,9 +29,15 @@ export default async function HubAppLayout({
   const links =
     role === "internal"
       ? [
+          { href: "/hub/dashboard", label: "Dashboard" },
+          { href: "/hub/universe", label: "Universe" },
+          { href: "/hub/crm", label: "CRM" },
+          { href: "/hub/invoices", label: "Invoices" },
           { href: "/hub/leads", label: "Leads" },
           { href: "/hub/clients", label: "Clients" },
+          { href: "/hub/arms", label: "Arms" },
           { href: "/hub/trading", label: "Trading" },
+          { href: "/hub/settings", label: "Settings" },
         ]
       : [{ href: "/hub/portal", label: "Portfolio" }];
 

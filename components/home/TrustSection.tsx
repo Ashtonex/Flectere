@@ -10,6 +10,14 @@ import {
 } from "@/lib/content";
 
 export default function TrustSection() {
+  const initials = founderStory.name
+    .split(" ")
+    .map((p) => p[0])
+    .filter(Boolean)
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+
   return (
     <section className="relative border-t border-white/5 bg-ink-900 py-28 md:py-36">
       <Container>
@@ -19,14 +27,9 @@ export default function TrustSection() {
         />
 
         <div className="mt-16 grid grid-cols-1 gap-8 lg:grid-cols-[1.1fr_0.9fr]">
-          <RevealOnScroll className="relative overflow-hidden rounded-2xl border border-white/10 bg-white/[0.02] p-8 md:p-10">
-            {founderStory.placeholder && (
-              <span className="absolute right-5 top-5 rounded-full border border-gold/30 bg-gold/10 px-3 py-1 text-[10px] font-medium uppercase tracking-widest2 text-gold">
-                Placeholder
-              </span>
-            )}
+          <RevealOnScroll className="alive-panel premium-panel rounded-xl p-8 md:p-10">
             <div className="flex h-12 w-12 items-center justify-center rounded-full bg-bend-gradient text-sm font-semibold text-ink-950">
-              FN
+              {initials}
             </div>
             <p className="mt-6 text-base leading-relaxed text-fog-300">
               {founderStory.bio}
@@ -37,7 +40,7 @@ export default function TrustSection() {
             </div>
           </RevealOnScroll>
 
-          <RevealOnScroll delay={0.1} className="rounded-2xl border border-white/10 bg-white/[0.02] p-8 md:p-10">
+          <RevealOnScroll delay={0.1} className="alive-panel rounded-xl border border-white/10 bg-white/[0.02] p-8 transition-colors duration-500 hover:border-gold/30 md:p-10">
             <div className="mb-5 flex items-center gap-2 text-gold">
               <ShieldCheck className="h-5 w-5" strokeWidth={1.75} />
               <p className="eyebrow text-gold">Methodology Credibility</p>
@@ -58,16 +61,16 @@ export default function TrustSection() {
             <RevealOnScroll
               key={t.name + i}
               delay={i * 0.08}
-              className="relative flex flex-col rounded-2xl border border-white/10 bg-white/[0.02] p-7"
+              className="alive-panel relative flex flex-col rounded-xl border border-white/10 bg-white/[0.02] p-7 transition-all duration-500 hover:-translate-y-1 hover:border-gold/25"
             >
+              <Quote className="h-5 w-5 text-graphite-bright" strokeWidth={1.75} />
               {t.placeholder && (
-                <span className="absolute right-5 top-5 rounded-full border border-gold/30 bg-gold/10 px-2.5 py-0.5 text-[10px] font-medium uppercase tracking-widest2 text-gold">
+                <span className="mt-4 w-fit rounded-full border border-gold/25 bg-gold/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-widest2 text-gold">
                   Placeholder
                 </span>
               )}
-              <Quote className="h-5 w-5 text-graphite-bright" strokeWidth={1.75} />
               <p className="mt-4 flex-1 text-sm leading-relaxed text-fog-300">
-                &ldquo;{t.quote}&rdquo;
+                {t.placeholder ? t.quote : <>&ldquo;{t.quote}&rdquo;</>}
               </p>
               <div className="mt-6 border-t border-white/10 pt-4">
                 <p className="text-sm font-medium text-fog-100">{t.name}</p>

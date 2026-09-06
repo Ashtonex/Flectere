@@ -15,7 +15,10 @@ html {
 }
 
 body {
-  background-color: #05070a;
+  background:
+    linear-gradient(180deg, rgba(198, 161, 89, 0.035), transparent 34rem),
+    radial-gradient(circle at 50% -20%, rgba(198, 161, 89, 0.12), transparent 34rem),
+    #05070a;
   color: #f5f7fa;
   overflow-x: hidden;
 }
@@ -64,6 +67,25 @@ body {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
+.patina-overlay {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 55;
+  opacity: 0.18;
+  mix-blend-mode: soft-light;
+  background-image:
+    radial-gradient(circle at 22% 18%, rgba(198, 161, 89, 0.22), transparent 18rem),
+    radial-gradient(circle at 80% 72%, rgba(155, 161, 168, 0.18), transparent 22rem),
+    repeating-linear-gradient(
+      92deg,
+      rgba(255, 255, 255, 0.024) 0,
+      rgba(255, 255, 255, 0.024) 1px,
+      transparent 1px,
+      transparent 9px
+    );
+}
+
 /* A dim room, not a flat dark page — edges recede into shadow. */
 .vignette-overlay {
   position: fixed;
@@ -95,6 +117,13 @@ body {
     color: transparent;
   }
 
+  .text-engraved {
+    color: #eee9df;
+    text-shadow:
+      0 0 18px rgba(198, 161, 89, 0.08),
+      0 1px 0 rgba(255, 255, 255, 0.08);
+  }
+
   .eyebrow {
     font-size: 0.72rem;
     font-weight: 600;
@@ -112,10 +141,140 @@ body {
     padding-right: 1.5rem;
   }
 
+  .premium-panel {
+    position: relative;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background:
+      linear-gradient(145deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.014)),
+      radial-gradient(circle at top left, rgba(198, 161, 89, 0.13), transparent 22rem);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.08),
+      0 24px 90px rgba(0, 0, 0, 0.28);
+  }
+
+  .premium-panel::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.42;
+    background-image:
+      linear-gradient(120deg, transparent 0%, rgba(255, 255, 255, 0.07) 42%, transparent 58%),
+      repeating-linear-gradient(
+        0deg,
+        rgba(255, 255, 255, 0.028) 0,
+        rgba(255, 255, 255, 0.028) 1px,
+        transparent 1px,
+        transparent 7px
+      );
+    transform: translateX(-45%);
+    transition: transform 900ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .premium-panel:hover::before {
+    transform: translateX(45%);
+  }
+
+  .alive-panel {
+    position: relative;
+    overflow: hidden;
+    transform-style: preserve-3d;
+  }
+
+  .alive-panel::after {
+    content: "";
+    position: absolute;
+    inset: auto 1rem 0;
+    height: 1px;
+    pointer-events: none;
+    background: linear-gradient(90deg, transparent, rgba(198, 161, 89, 0.6), transparent);
+    opacity: 0;
+    transform: scaleX(0.4);
+    transition:
+      opacity 520ms cubic-bezier(0.16, 1, 0.3, 1),
+      transform 720ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .alive-panel:hover::after,
+  .group:hover .alive-panel::after {
+    opacity: 1;
+    transform: scaleX(1);
+  }
+
+  .sigil-ring {
+    background:
+      conic-gradient(from 120deg, rgba(198, 161, 89, 0.08), rgba(232, 212, 160, 0.8), rgba(155, 161, 168, 0.2), rgba(198, 161, 89, 0.08)),
+      radial-gradient(circle, rgba(5, 7, 10, 0.94) 58%, rgba(5, 7, 10, 0.2) 60%);
+  }
+
   @media (min-width: 768px) {
     .container-flectere {
       padding-left: 2.5rem;
       padding-right: 2.5rem;
     }
+  }
+}
+
+.living-grid {
+  background-image:
+    linear-gradient(rgba(198, 161, 89, 0.09) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(155, 161, 168, 0.08) 1px, transparent 1px);
+  background-size: 72px 72px;
+  animation: living-grid-drift 24s linear infinite;
+  mask-image: radial-gradient(circle at 50% 38%, black, transparent 72%);
+}
+
+.scanline-field {
+  background:
+    linear-gradient(180deg, transparent, rgba(198, 161, 89, 0.12), transparent),
+    repeating-linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.035) 0,
+      rgba(255, 255, 255, 0.035) 1px,
+      transparent 1px,
+      transparent 12px
+    );
+  animation: scanline-pass 9s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+}
+
+.orbit-sigil {
+  animation: orbit-sigil 32s linear infinite;
+}
+
+.perspective-shell {
+  perspective: 900px;
+}
+
+@keyframes living-grid-drift {
+  from {
+    background-position: 0 0, 0 0;
+  }
+  to {
+    background-position: 72px 144px, 144px 72px;
+  }
+}
+
+@keyframes scanline-pass {
+  0% {
+    transform: translateY(-45vh);
+    opacity: 0;
+  }
+  18%,
+  62% {
+    opacity: 0.45;
+  }
+  100% {
+    transform: translateY(110vh);
+    opacity: 0;
+  }
+}
+
+@keyframes orbit-sigil {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
   }
 }

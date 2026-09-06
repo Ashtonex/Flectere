@@ -6,12 +6,12 @@ type JwtClaims = {
 };
 
 export default async function HubIndexPage() {
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data } = await supabase.auth.getClaims();
   const claims = data?.claims as JwtClaims | undefined;
   const role = claims?.app_metadata?.role;
 
-  if (role === "internal") redirect("/hub/leads");
+  if (role === "internal") redirect("/hub/dashboard");
   if (role === "client") redirect("/hub/portal");
   redirect("/hub/login");
 }

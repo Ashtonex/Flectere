@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import {
   computeAccountAnalytics,
   computePortfolioTotals,
+  computeTradingDeskAccounting,
   formatCurrency,
   formatPercent,
 } from "@/lib/hub/analytics";
@@ -27,7 +28,7 @@ const submitClasses =
   "mt-2 rounded-lg border border-gold/50 bg-ink-900 px-4 py-2 text-sm font-medium text-gold transition-colors hover:border-gold hover:bg-gold hover:text-ink-950";
 
 export default async function TradingPage() {
-  const supabase = createClient();
+  const supabase = await createClient();
 
   const [{ data: accounts }, { data: entries }, { data: expenses }, { data: withdrawals }, { data: clients }] =
     await Promise.all([
@@ -53,39 +54,59 @@ export default async function TradingPage() {
     )
   );
   const portfolio = computePortfolioTotals(analytics);
+  const accounting = computeTradingDeskAccounting(accountList, expenseList, withdrawalList);
 
   return (
     <div className="space-y-12">
-      <div>
-        <h1 className="font-display text-2xl text-fog-100">Trading</h1>
-        <p className="mt-1 text-sm text-fog-500">
-          Funded accounts, spend, and performance in one place.
-        </p>
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h1 className="font-display text-2xl text-fog-100">ATMcap Trading Desk</h1>
+          <p className="mt-1 text-sm text-fog-500">
+            Funded accounts, challenge amortisation, and true net portfolio extraction.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2.5 py-1 rounded-full font-mono">
+            {accounting.activeFundedCount} Funded Active
+          </span>
+          <span className="text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/30 px-2.5 py-1 rounded-full font-mono">
+            {accounting.activeChallengeCount} In Challenge
+          </span>
+        </div>
       </div>
 
+      {/* Primary KPI Row */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
-          <p className="text-xs uppercase tracking-widest2 text-fog-500">Total Value</p>
+          <p className="text-xs uppercase tracking-widest2 text-fog-500">Total Liquid Equity</p>
           <p className="mt-2 font-display text-2xl text-fog-100">
             {formatCurrency(portfolio.totalValue)}
           </p>
         </div>
         <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
-          <p className="text-xs uppercase tracking-widest2 text-fog-500">Total Spend</p>
+          <p className="text-xs uppercase tracking-widest2 text-fog-500">Gross Payouts</p>
           <p className="mt-2 font-display text-2xl text-fog-100">
-            {formatCurrency(portfolio.totalSpend)}
+            {formatCurrency(accounting.totalGrossPayouts)}
           </p>
         </div>
         <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
-          <p className="text-xs uppercase tracking-widest2 text-fog-500">Extracted</p>
+          <p className="text-xs uppercase tracking-widest2 text-fog-500">Challenge Fees Paid</p>
           <p className="mt-2 font-display text-2xl text-fog-100">
-            {formatCurrency(portfolio.totalExtracted)}
+            {formatCurrency(accounting.totalChallengeFeesPaid)}
           </p>
+          {accounting.feeRefundsRecovered > 0 && (
+            <p className="text-[10px] text-emerald-400 mt-1">
+              +{formatCurrency(accounting.feeRefundsRecovered)} refunded
+            </p>
+          )}
         </div>
         <div className="rounded-xl border border-gold/25 bg-gold/5 p-5">
-          <p className="text-xs uppercase tracking-widest2 text-gold">ROI</p>
-          <p className="mt-2 font-display text-2xl text-fog-100">
-            {formatPercent(portfolio.roi)}
+          <p className="text-xs uppercase tracking-widest2 text-gold">Net Portfolio Cash Profit</p>
+          <p className="mt-2 font-display text-2xl text-fog-100 font-bold">
+            {formatCurrency(accounting.netPortfolioCashProfit)}
+          </p>
+          <p className="text-[10px] text-fog-400 mt-1">
+            True Net ROI: <span className="text-gold font-bold">{formatPercent(accounting.truePortfolioRoi)}</span>
           </p>
         </div>
       </div>

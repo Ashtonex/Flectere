@@ -5,8 +5,8 @@ import { cookies } from "next/headers";
 // incoming request. Token refresh is handled by middleware.ts, so writes
 // here are best-effort (they no-op harmlessly when called from a Server
 // Component, which can't set cookies directly).
-export function createClient() {
-  const cookieStore = cookies();
+export async function createClient() {
+  const cookieStore = await cookies();
 
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,

@@ -1,13 +1,13 @@
 "use client";
 
-import { Compass, Workflow, Cpu, TrendingUp, BarChart3, Sparkles } from "lucide-react";
+import { Compass, Workflow, Cpu, TrendingUp, BarChart3, Sparkles, type LucideIcon } from "lucide-react";
 import Container from "@/components/ui/Container";
 import SectionHeading from "@/components/ui/SectionHeading";
 import RevealOnScroll from "@/components/ui/RevealOnScroll";
 import Button from "@/components/ui/Button";
 import { capabilities, type Capability } from "@/lib/content";
 
-const ICONS: Record<Capability["icon"], React.ElementType> = {
+const ICONS: Record<Capability["icon"], LucideIcon> = {
   compass: Compass,
   workflow: Workflow,
   cpu: Cpu,
@@ -39,7 +39,7 @@ export default function CapabilitiesSection() {
               <RevealOnScroll
                 key={cap.key}
                 delay={(i % 3) * 0.08}
-                className="group relative flex flex-col rounded-2xl border border-white/10 bg-white/[0.02] p-7 transition-all duration-300 hover:-translate-y-1 hover:border-gold/30 hover:bg-white/[0.04]"
+                className="alive-panel premium-panel group flex flex-col rounded-xl p-7 transition-all duration-500 hover:-translate-y-1"
               >
                 <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-white/10 bg-bend-gradient-soft">
                   <Icon className="h-5 w-5 text-gold" strokeWidth={1.75} />

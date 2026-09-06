@@ -63,12 +63,71 @@ export function computePortfolioTotals(analytics: AccountAnalytics[]) {
   return { totalSpend, totalExtracted, totalValue, totalReturn, roi };
 }
 
-export function formatCurrency(value: number | null, currency = "USD") {
-  if (value === null) return "—";
+export function formatCurrency(value: number | null | undefined, currency = "USD") {
+  if (value === null || value === undefined || !Number.isFinite(value)) return "—";
   return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(value);
 }
 
-export function formatPercent(value: number | null) {
-  if (value === null) return "—";
+export function formatPercent(value: number | null | undefined) {
+  if (value === null || value === undefined || !Number.isFinite(value)) return "—";
   return `${(value * 100).toFixed(1)}%`;
 }
+
+export type TradingDeskAccounting = {
+  totalGrossPayouts: number;
+  totalChallengeFeesPaid: number;
+  feeRefundsRecovered: number;
+  unrecoveredRiskCapital: number;
+  netPortfolioCashProfit: number;
+  truePortfolioRoi: number | null;
+  activeChallengeCount: number;
+  activeFundedCount: number;
+};
+
+export function computeTradingDeskAccounting(
+  accounts: TradingAccount[],
+  expenses: Expense[],
+  withdrawals: Withdrawal[]
+): TradingDeskAccounting {
+  const totalGrossPayouts = withdrawals.reduce((sum, w) => sum + Number(w.amount), 0);
+
+  const challengeExpenses = expenses
+    .filter((e) => e.category === "prop_fee")
+    .reduce((sum, e) => sum + Number(e.amount), 0);
+
+  const accountChallengeCosts = accounts.reduce(
+    (sum, a) => sum + Number(a.challenge_cost ?? 0),
+    0
+  );
+  const totalChallengeFeesPaid = Math.max(challengeExpenses, accountChallengeCosts);
+
+  const feeRefundsRecovered = accounts
+    .filter((a) => a.fee_refunded)
+    .reduce((sum, a) => sum + Number(a.challenge_cost ?? 0), 0);
+
+  const unrecoveredRiskCapital = Math.max(0, totalChallengeFeesPaid - feeRefundsRecovered);
+  const netPortfolioCashProfit = totalGrossPayouts - unrecoveredRiskCapital;
+
+  const truePortfolioRoi =
+    totalChallengeFeesPaid > 0 ? netPortfolioCashProfit / totalChallengeFeesPaid : null;
+
+  const activeChallengeCount = accounts.filter(
+    (a) => a.account_type === "challenge" && a.phase !== "blown" && a.status !== "blown"
+  ).length;
+
+  const activeFundedCount = accounts.filter(
+    (a) => a.account_type === "funded" || a.account_type === "live"
+  ).length;
+
+  return {
+    totalGrossPayouts,
+    totalChallengeFeesPaid,
+    feeRefundsRecovered,
+    unrecoveredRiskCapital,
+    netPortfolioCashProfit,
+    truePortfolioRoi,
+    activeChallengeCount,
+    activeFundedCount,
+  };
+}
+

@@ -21,7 +21,7 @@ npm run start   # run the production build locally
 npm run lint    # eslint
 ```
 
-Requires Node.js 18.18+ (Next.js 14 requirement).
+Requires Node.js 20.9+ (Next.js 16 and Sharp 0.35 requirement).
 
 ## Project Structure
 
@@ -129,17 +129,9 @@ The diagnostic tool's questions and scoring weights live in
 **`lib/diagnosticData.ts`**; the scoring algorithm (score, strongest/weakest
 dimension, recommendation) lives in **`lib/scoring.ts`**.
 
-### Placeholder content
+### Brand and transformation content
 
-A few things are placeholders (no real data exists yet) and are explicitly
-flagged in the code and UI with a small "Placeholder" badge:
-
-- **Founder story** — `founderStory` in `lib/content.ts`
-- **Testimonials** — `testimonials` in `lib/content.ts`
-- **Partner/tool logos** — `partnerLogos` in `lib/content.ts`
-- **Contact email** — `hello@flectere.com` in `app/contact/page.tsx`
-
-Search the codebase for `Placeholder` to find every flagged spot.
+All core copy, founder leadership background, proof-point slots, and integrated stack capabilities live in **`lib/content.ts`**. Testimonial slots are clearly marked placeholders until Flectēre has approved client quotes or measurable case studies to publish. Update that file to reflect verified client engagements or expanded sector capabilities.
 
 ## Connecting a Real Backend
 
@@ -194,13 +186,11 @@ missing instead of doing something silently wrong).
 ### Creating a client login
 
 From `/hub/trading`, add a `clients` row and a `trading_accounts` row linked
-to it. The client's actual *login*, though, isn't self-serve yet — creating
-their `auth.users` row with `app_metadata: { role: 'client', client_id: '<uuid>' }`
-currently has to go through the Supabase Admin API (`supabase.auth.admin.createUser`,
-using the service-role key) or the Dashboard + the same `raw_app_meta_data`
-SQL pattern above with `client_id` added. Wiring a proper "invite client"
-button into `/hub/trading` that does this in one click is a natural next
-step, not yet built.
+to it. Then open that client's profile under `/hub/clients/[id]` and use
+**Client Portal Access** to create or reset their login. The action creates
+or updates the Supabase Auth user with `app_metadata: { role: 'client',
+client_id: '<uuid>' }`, writes the matching `profiles` row, and keeps the
+client portal scoped by RLS.
 
 ### What's here vs. what's next
 
@@ -208,6 +198,24 @@ Phase 1 (built): auth with two roles (`internal`/`client`) enforced by
 Postgres RLS — not just hidden UI — an internal dashboard for leads and
 trading accounts, manual entry for performance snapshots and expenses,
 basic ROI/spend analytics, and a read-only client portal.
+
+Phase 2 (built): a central CRM operating layer for the Flectēre portfolio.
+Flectēre itself remains the core/control layer for capital, trading, identity,
+CRM, billing, documents, workflows, notifications, analytics, audit, and
+integrations. Intelligence & Advisory is the professional-services layer.
+The 11 sector platforms are SHIELD, CUNICULUS, CROPUS, VECTURA, FABRICA,
+POTENTIA, SALUS, DOCTRINA, STIRPS, AEDIFICIUM, and ARGENTARIA. Internal
+users can define arms and services, track opportunities, record activity,
+issue invoices, upload categorized client documents, and log revenue across
+the whole group. The dashboard rolls up revenue received, booked revenue,
+unpaid invoices, pipeline, clients, and activity centrally, while each client
+profile keeps that client's documents, CRM history, invoices, and
+trading/account data together.
+
+Invoice emails are sent through Resend when `RESEND_API_KEY` and
+`FLECTERE_EMAIL_FROM` are configured. Without those variables, send attempts
+are logged in the hub mail log as failed with a clear setup message; no
+server-side secret is exposed to the browser.
 
 Not built yet, deliberately:
 - **Live sync from a specific broker/prop firm.** [TradeZella](https://www.tradezella.com/brokersupport)
@@ -236,12 +244,10 @@ segments, and the method scene ~104 points / ~190 segments.
 
 ## Security
 
-`npm audit` currently reports high-severity advisories against Next.js 14.2.x
-(server-side request smuggling / DoS / cache-poisoning classes) whose fixes
-ship in Next.js 16, a breaking major version. This project intentionally
-stays on Next 14 (latest 14.2.x patch) for now rather than force an
-unreviewed major upgrade. Before deploying this site to production, plan a
-tested upgrade to the latest Next.js major version and re-run `npm audit`.
+The app is on Next.js 16 with the `proxy.ts` request gate convention and the
+current dependency audit is expected to pass with zero known vulnerabilities.
+Run `npm audit`, `npm test`, `npm run lint`, and `npm run build` before each
+production release.
 
 ## Deployment Notes
 

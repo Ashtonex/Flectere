@@ -18,7 +18,7 @@ export default function BeforeAfter() {
         />
 
         <div className="relative mt-16 grid grid-cols-1 gap-6 md:grid-cols-2">
-          <RevealOnScroll className="rounded-2xl border border-white/10 bg-white/[0.015] p-8 md:p-10">
+          <RevealOnScroll className="alive-panel rounded-xl border border-white/10 bg-white/[0.015] p-8 transition-all duration-500 hover:border-fog-500/30 md:p-10">
             <p className="eyebrow mb-6 text-fog-500">Before Flectēre</p>
             <ul className="space-y-4">
               {beforeAfter.before.map((item) => (
@@ -34,7 +34,7 @@ export default function BeforeAfter() {
 
           <RevealOnScroll
             delay={0.12}
-            className="relative overflow-hidden rounded-2xl border border-gold/25 bg-bend-gradient-soft p-8 md:p-10"
+            className="alive-panel premium-panel rounded-xl border-gold/25 bg-bend-gradient-soft p-8 md:p-10"
           >
             <p className="eyebrow mb-6">After Flectēre</p>
             <ul className="space-y-4">

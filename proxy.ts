@@ -14,9 +14,9 @@ const NOT_CONFIGURED_HTML = `<!doctype html>
   </div>
 </body></html>`;
 
-// Scoped to /hub only (see matcher below) — the public marketing site
+// Scoped to /hub only (see matcher below) - the public marketing site
 // never touches Supabase or auth cookies.
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   // Without these, @supabase/ssr throws synchronously on client creation.
   // Fail with a clear, static message instead of an unhandled 500.
   if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
@@ -47,7 +47,7 @@ export async function middleware(request: NextRequest) {
     }
   );
 
-  // getClaims() validates the JWT signature server-side — unlike
+  // getClaims() validates the JWT signature server-side - unlike
   // getSession(), it's safe to use for an authorization decision.
   const { data } = await supabase.auth.getClaims();
   const claims = data?.claims;

@@ -39,34 +39,41 @@ export type DiagnosticResult = {
   stated90DayLabel?: string;
 };
 
-export function computeResult(answers: Answers): DiagnosticResult {
+export function computeResult(answers: Answers = {}): DiagnosticResult {
   const scoredQuestions = questions.filter(isScored);
 
-  const dimensionScores: DimensionScore[] = scoredQuestions.map((q) => ({
-    key: q.dimension,
-    label: dimensionLabels[q.dimension],
-    score: Number(answers[q.id] ?? 0),
-  }));
+  const dimensionScores: DimensionScore[] = scoredQuestions.map((q) => {
+    const raw = Number(answers?.[q.id] ?? answers?.[q.dimension]);
+    const score = Number.isFinite(raw) ? Math.min(100, Math.max(0, Math.round(raw))) : 0;
+    return {
+      key: q.dimension,
+      label: dimensionLabels[q.dimension] ?? q.dimension,
+      score,
+    };
+  });
 
-  const score = Math.round(
-    dimensionScores.reduce((sum, d) => sum + d.score, 0) / dimensionScores.length
-  );
+  const totalScore = dimensionScores.reduce((sum, d) => sum + d.score, 0);
+  const score = dimensionScores.length > 0 ? Math.round(totalScore / dimensionScores.length) : 0;
 
   const sorted = [...dimensionScores].sort((a, b) => b.score - a.score);
-  const strongest = sorted[0];
-  const weakest = sorted[sorted.length - 1];
+  const strongest = sorted[0] ?? {
+    key: "strategy" as DimensionKey,
+    label: dimensionLabels.strategy,
+    score: 0,
+  };
+  const weakest = sorted[sorted.length - 1] ?? strongest;
 
   const constraintQuestion = questions.find((q) => q.id === "constraint");
   const priorityQuestion = questions.find((q) => q.id === "priority-90");
 
   const statedConstraintLabel =
     constraintQuestion?.type === "context"
-      ? constraintQuestion.options.find((o) => o.value === answers["constraint"])?.label
+      ? constraintQuestion.options.find((o) => o.value === answers?.["constraint"])?.label
       : undefined;
 
   const stated90DayLabel =
     priorityQuestion?.type === "context"
-      ? priorityQuestion.options.find((o) => o.value === answers["priority-90"])?.label
+      ? priorityQuestion.options.find((o) => o.value === answers?.["priority-90"])?.label
       : undefined;
 
   return {
@@ -74,8 +81,11 @@ export function computeResult(answers: Answers): DiagnosticResult {
     dimensionScores,
     strongest,
     weakest,
-    recommendation: dimensionRecommendations[weakest.key],
-    recommendedCapabilitySlug: dimensionToCapabilitySlug[weakest.key],
+    recommendation:
+      dimensionRecommendations[weakest.key] ??
+      "Start by diagnosing the core constraint in your operating systems.",
+    recommendedCapabilitySlug:
+      dimensionToCapabilitySlug[weakest.key] ?? "strategy-positioning",
     statedConstraintLabel,
     stated90DayLabel,
   };

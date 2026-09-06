@@ -2,7 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import type { Lead } from "@/lib/hub/types";
 
 export default async function LeadsPage() {
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data, error } = await supabase
     .from("leads")
     .select("*")

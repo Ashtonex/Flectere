@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import PageHero from "@/components/ui/PageHero";
 import SolutionsList from "@/components/solutions/SolutionsList";
+import ProductArmsSection from "@/components/products/ProductArmsSection";
 import FinalCTA from "@/components/home/FinalCTA";
 
 export const metadata: Metadata = {
@@ -23,6 +24,7 @@ export default function SolutionsPage() {
         description="Not a services menu — a set of outcomes. Each capability solves a specific constraint, end to end, from diagnosis to implementation."
       />
       <SolutionsList />
+      <ProductArmsSection compact />
       <FinalCTA />
     </>
   );

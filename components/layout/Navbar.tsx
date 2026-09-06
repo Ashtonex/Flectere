@@ -11,6 +11,7 @@ import Logo from "@/components/brand/Logo";
 
 const LINKS = [
   { href: "/solutions", label: "Solutions" },
+  { href: "/products", label: "Products" },
   { href: "/method", label: "Method" },
   { href: "/diagnostic", label: "Diagnostic" },
   { href: "/insights", label: "Insights" },

@@ -128,6 +128,11 @@ export const problems: Problem[] = [
     description:
       "Every new customer, hire, or product adds friction instead of momentum — a sign the system, not the effort, is the problem.",
   },
+  {
+    title: "Leadership can feel the constraint.",
+    description:
+      "The pressure is obvious before the source is. Leaders know something is rigid, but the system has not made the constraint visible yet.",
+  },
 ];
 
 export type Capability = {
@@ -214,29 +219,241 @@ export const capabilities: Capability[] = [
   },
 ];
 
+export type ProductArm = {
+  rank: number;
+  key: string;
+  productName: string;
+  sector: string;
+  positioning: string;
+  aiOpportunities: string[];
+  likelyCustomers: string[];
+  status: "Priority" | "Planned";
+};
+
+export const productArms: ProductArm[] = [
+  {
+    rank: 1,
+    key: "shield",
+    productName: "SHIELD",
+    sector: "Insurance & InsurTech",
+    positioning:
+      "For insurers losing time and margin to slow claims, weak risk visibility, and fragmented broker operations.",
+    aiOpportunities: [
+      "Policy administration",
+      "Claims triage",
+      "Risk scoring",
+      "Broker portals",
+      "Customer portals",
+      "Fraud controls",
+    ],
+    likelyCustomers: ["Insurers", "Brokers", "Administrators", "InsurTech teams"],
+    status: "Priority",
+  },
+  {
+    rank: 2,
+    key: "cuniculus",
+    productName: "CUNICULUS",
+    sector: "Mining",
+    positioning:
+      "For mines where equipment downtime, compliance gaps, production blind spots, and contractor leakage carry real cost.",
+    aiOpportunities: [
+      "Mine operations",
+      "Production reporting",
+      "Equipment monitoring",
+      "Compliance controls",
+      "Mineral intelligence",
+      "Contractor oversight",
+    ],
+    likelyCustomers: ["Mines", "Mining contractors", "Plant operators"],
+    status: "Priority",
+  },
+  {
+    rank: 3,
+    key: "cropus",
+    productName: "CROPUS",
+    sector: "Agriculture",
+    positioning:
+      "For farms and aggregators that need earlier crop signals, cleaner records, stronger market access, and tighter supply control.",
+    aiOpportunities: [
+      "Farm management",
+      "Crop intelligence",
+      "Livestock records",
+      "Market matching",
+      "Supply chains",
+      "Yield forecasting",
+    ],
+    likelyCustomers: ["Commercial farms", "Aggregators", "Agri-insurers", "Cooperatives"],
+    status: "Priority",
+  },
+  {
+    rank: 4,
+    key: "vectura",
+    productName: "VECTURA",
+    sector: "Transport & Logistics",
+    positioning:
+      "For fleets exposed to fuel loss, poor routing, delivery disputes, maintenance surprises, and driver risk.",
+    aiOpportunities: [
+      "Fleet management",
+      "Deliveries",
+      "Route optimisation",
+      "Cargo control",
+      "Transport operations",
+      "Fuel monitoring",
+    ],
+    likelyCustomers: ["Hauliers", "Distributors", "Bus operators", "Fleet owners"],
+    status: "Priority",
+  },
+  {
+    rank: 5,
+    key: "fabrica",
+    productName: "FABRICA",
+    sector: "Manufacturing",
+    positioning:
+      "For manufacturers losing throughput to weak planning, inventory noise, quality failures, and unplanned downtime.",
+    aiOpportunities: [
+      "Production planning",
+      "Inventory",
+      "Quality control",
+      "Maintenance",
+      "Raw-material forecasting",
+      "Downtime warnings",
+    ],
+    likelyCustomers: ["Factories", "Processors", "Industrial operators"],
+    status: "Priority",
+  },
+  {
+    rank: 6,
+    key: "potentia",
+    productName: "POTENTIA",
+    sector: "Energy",
+    positioning:
+      "For energy operators that need cleaner asset visibility, fault detection, billing control, and demand intelligence.",
+    aiOpportunities: [
+      "Energy monitoring",
+      "Asset management",
+      "Billing",
+      "Predictive maintenance",
+      "Fault detection",
+      "Demand forecasting",
+    ],
+    likelyCustomers: ["Solar companies", "Mines", "Factories", "Energy operators"],
+    status: "Priority",
+  },
+  {
+    rank: 7,
+    key: "salus",
+    productName: "SALUS",
+    sector: "Healthcare & Veterinary Services",
+    positioning:
+      "For clinics and veterinary operators where records, medicine stock, follow-up, claims, and triage cannot remain manual.",
+    aiOpportunities: [
+      "Patient records",
+      "Animal records",
+      "Diagnostics support",
+      "Facilities",
+      "Medicine management",
+      "Follow-up workflows",
+    ],
+    likelyCustomers: ["Clinics", "Pharmacies", "Vets"],
+    status: "Planned",
+  },
+  {
+    rank: 8,
+    key: "doctrina",
+    productName: "DOCTRINA",
+    sector: "Education",
+    positioning:
+      "For schools that need stronger administration, assessments, learning visibility, and student performance intelligence.",
+    aiOpportunities: [
+      "School administration",
+      "Learning platforms",
+      "Assessments",
+      "Student analytics",
+      "Local curriculum tools",
+      "Marking support",
+    ],
+    likelyCustomers: ["Private schools", "Colleges", "Parents", "Training providers"],
+    status: "Planned",
+  },
+  {
+    rank: 9,
+    key: "stirps",
+    productName: "STIRPS",
+    sector: "Wholesale & Retail",
+    positioning:
+      "For retailers and wholesalers fighting stock gaps, shrinkage, weak purchasing, unclear margins, and fragmented customer data.",
+    aiOpportunities: [
+      "Multi-tenant POS",
+      "Inventory",
+      "Purchasing",
+      "Distribution",
+      "Customer intelligence",
+      "Margin controls",
+    ],
+    likelyCustomers: ["Groceries", "Wholesalers", "Pharmacies", "Distributors"],
+    status: "Planned",
+  },
+  {
+    rank: 10,
+    key: "aedificium",
+    productName: "AEDIFICIUM",
+    sector: "Construction & Infrastructure",
+    positioning:
+      "For contractors and developers exposed to cost overruns, procurement drift, site opacity, plant misuse, and workforce risk.",
+    aiOpportunities: [
+      "Projects",
+      "Sites",
+      "Commercial controls",
+      "Procurement",
+      "Plant",
+      "Workforce",
+    ],
+    likelyCustomers: ["Contractors", "Developers", "QS firms", "Infrastructure operators"],
+    status: "Priority",
+  },
+  {
+    rank: 11,
+    key: "argentaria",
+    productName: "ARGENTARIA",
+    sector: "Banking & Financial Services",
+    positioning:
+      "For lenders and financial institutions that need sharper credit, collections, compliance, and portfolio intelligence.",
+    aiOpportunities: [
+      "Banks",
+      "MFIs",
+      "SACCOs",
+      "Lending",
+      "Collections",
+      "Compliance intelligence",
+    ],
+    likelyCustomers: ["Banks", "MFIs", "SACCOs", "Credit providers"],
+    status: "Planned",
+  },
+];
+
 export const beforeAfter = {
   before: [
-    "Scattered tools that don't talk to each other",
-    "Manual workflows that don't scale with headcount",
-    "Slow decisions made in stale meetings",
-    "Unclear ownership across teams",
-    "Growth that feels inconsistent and unpredictable",
+    "Scattered tools",
+    "Manual workflows",
+    "Slow decisions",
+    "Unclear ownership",
+    "Inconsistent growth",
+    "Reactive leadership",
   ],
   after: [
-    "One connected operating system",
-    "Automated workflows that scale with demand",
-    "Faster decisions backed by live data",
-    "Clear ownership from strategy to execution",
-    "Measurable, compounding growth",
+    "Clear systems",
+    "Automated workflows",
+    "Faster decisions",
+    "Aligned teams",
+    "Measurable growth",
+    "Adaptive operating model",
   ],
 };
 
-// Placeholder — replace with your founder's real story, photo, and background.
 export const founderStory = {
-  placeholder: true as const,
-  name: "Founder Name",
+  name: "Ashton Mercer",
   role: "Founder & Managing Partner, Flectēre",
-  bio: "After a decade spent inside operating roles — watching strategy decks gather dust while the actual business kept running on spreadsheets and tribal knowledge — Flectēre was built on one belief: transformation only sticks when it's implemented inside the business, not handed to it. The Sense–Shape–Shift–Scale method is the result of running that loop, in real companies, until it became repeatable.",
+  bio: "After more than a decade operating across high-stakes trading, capital systems, and enterprise turnarounds, Flectēre was built on one uncompromising principle: transformation only holds when it is engineered into the operating fabric of the firm, not handed over in a presentation binder. The Sense–Shape–Shift–Scale method represents hundreds of iterations solving structural bottlenecks in live operations.",
 };
 
 export const credibilityPoints = [
@@ -275,42 +492,44 @@ export type Testimonial = {
   quote: string;
   name: string;
   role: string;
-  placeholder: true;
+  placeholder?: boolean;
 };
 
-// NOTE: These are clearly-marked placeholders. Replace with real client
-// quotes (and remove the `placeholder` flag / badge) once available.
 export const testimonials: Testimonial[] = [
   {
     quote:
-      "Flectēre didn't hand us a deck. They found the actual constraint in our operations and helped us fix it in weeks, not quarters.",
-    name: "Placeholder Client",
-    role: "CEO, Placeholder Company",
+      "Reserved for a verified client result once Flectēre has approval to publish the metric, name, and operational context.",
+    name: "Client result slot",
+    role: "Verified testimonial pending",
     placeholder: true,
   },
   {
     quote:
-      "For the first time, our leadership team is making decisions from the same data instead of arguing about whose numbers are right.",
-    name: "Placeholder Client",
-    role: "COO, Placeholder Company",
+      "Reserved for a founder or operator quote about the Sense, Shape, Shift, Scale method after permission is secured.",
+    name: "Operator quote slot",
+    role: "Approved quote pending",
     placeholder: true,
   },
   {
     quote:
-      "The Sense-Shape-Shift-Scale method gave us a shared language for change. That alone was worth the engagement.",
-    name: "Placeholder Client",
-    role: "Founder, Placeholder Company",
+      "Reserved for a measurable transformation story covering before-state, shipped system, and after-state impact.",
+    name: "Transformation proof slot",
+    role: "Case study pending",
     placeholder: true,
   },
 ];
 
-// Placeholder partner/tool logos — swap for real integration or client logos.
 export const partnerLogos: string[] = [
-  "Placeholder Partner",
-  "Placeholder Platform",
-  "Placeholder Tool",
-  "Placeholder Partner",
-  "Placeholder Platform",
+  "Supabase Architecture",
+  "PostgreSQL Engine",
+  "Next.js Systems",
+  "Python / FastAPI",
+  "AWS Cloud Infrastructure",
+  "MetaTrader 5 Protocol",
+  "Docker Containerization",
+  "Stripe Financial Infrastructure",
+  "Tailwind CSS Design System",
+  "Framer Motion",
 ];
 
 export type Article = {
@@ -379,6 +598,21 @@ export const articles: Article[] = [
       "Growth is downstream of a lot of things that don't look like growth levers: how fast decisions get made, whether teams are working from the same data, whether the operating model can support a new segment without reinventing itself. Push harder on sales without fixing those, and you get a bigger funnel pouring into the same leaky system.",
       "A useful diagnostic question: if you doubled the leads or the traffic tomorrow, what would break first? For a lot of companies, the honest answer isn't 'nothing' — it's onboarding, or support, or fulfillment, or the founder's calendar. That's the real growth ceiling, and it's a systems problem wearing a growth problem's clothes.",
       "This is why growth work and operations work can't be fully separated. The companies that grow smoothly aren't the ones with the most aggressive targets — they're the ones whose systems can absorb more volume without a proportional increase in chaos. Fix the system, and the growth levers you already have start working harder without needing to be pulled harder.",
+    ],
+  },
+  {
+    slug: "what-adaptive-businesses-do-differently",
+    title: "What Adaptive Businesses Do Differently",
+    excerpt:
+      "Adaptive companies do not wait for pressure to become visible in revenue. They build sensing, decision, and execution loops before the market forces them to.",
+    category: "Adaptability",
+    readTime: "6 min read",
+    body: [
+      "Adaptive businesses are not simply faster. They are designed to notice change earlier, decide with less ambiguity, and move without waiting for a crisis. That difference usually comes from operating design, not personality.",
+      "The first pattern is sensing. Leadership teams in adaptive companies know which signals matter and where those signals live. They do not rely only on quarterly lag indicators; they watch operational friction, customer behavior, margin drift, and team capacity while there is still time to respond.",
+      "The second pattern is decision clarity. When the market changes, a rigid business has to debate who owns the response. An adaptive business already has a decision architecture: who reads the signal, who frames the choice, who approves the shift, and how quickly the new direction reaches the teams doing the work.",
+      "The third pattern is modular execution. Workflows, tools, and teams are arranged so one change does not require the entire company to pause and rebuild. That is what makes flexibility practical instead of theoretical.",
+      "The takeaway is simple: adaptability is not a mood. It is a system. Companies that want to bend before they break need to design the loops that let them keep reshaping while the business is still strong.",
     ],
   },
 ];

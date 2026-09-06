@@ -6,16 +6,19 @@ import {
   formatCurrency,
   formatPercent,
 } from "@/lib/hub/analytics";
+import { sumRevenue, weightedPipeline } from "@/lib/hub/crm";
 import type {
   Client,
+  CrmOpportunity,
   Expense,
   PerformanceEntry,
+  RevenueRecord,
   TradingAccount,
   Withdrawal,
 } from "@/lib/hub/types";
 
 export default async function ClientsPage() {
-  const supabase = createClient();
+  const supabase = await createClient();
 
   const [
     { data: clients },
@@ -23,12 +26,16 @@ export default async function ClientsPage() {
     { data: entries },
     { data: expenses },
     { data: withdrawals },
+    { data: opportunities },
+    { data: revenue },
   ] = await Promise.all([
     supabase.from("clients").select("*").order("name"),
     supabase.from("trading_accounts").select("*"),
     supabase.from("performance_entries").select("*"),
     supabase.from("expenses").select("*"),
     supabase.from("withdrawals").select("*"),
+    supabase.from("crm_opportunities").select("*"),
+    supabase.from("revenue_records").select("*"),
   ]);
 
   const clientList = (clients ?? []) as Client[];
@@ -36,9 +43,13 @@ export default async function ClientsPage() {
   const entryList = (entries ?? []) as PerformanceEntry[];
   const expenseList = (expenses ?? []) as Expense[];
   const withdrawalList = (withdrawals ?? []) as Withdrawal[];
+  const opportunityList = (opportunities ?? []) as CrmOpportunity[];
+  const revenueList = (revenue ?? []) as RevenueRecord[];
 
   const rows = clientList.map((client) => {
     const clientAccounts = accountList.filter((a) => a.client_id === client.id);
+    const clientOpportunities = opportunityList.filter((opportunity) => opportunity.client_id === client.id);
+    const clientRevenue = revenueList.filter((record) => record.client_id === client.id);
     const analytics = clientAccounts.map((account) =>
       computeAccountAnalytics(
         account,
@@ -47,7 +58,13 @@ export default async function ClientsPage() {
         withdrawalList.filter((w) => w.account_id === account.id)
       )
     );
-    return { client, accountCount: clientAccounts.length, totals: computePortfolioTotals(analytics) };
+    return {
+      client,
+      accountCount: clientAccounts.length,
+      serviceRevenue: sumRevenue(clientRevenue, ["received"]),
+      pipelineValue: weightedPipeline(clientOpportunities),
+      totals: computePortfolioTotals(analytics),
+    };
   });
 
   return (
@@ -63,6 +80,8 @@ export default async function ClientsPage() {
             <tr>
               <th className="px-4 py-3">Name</th>
               <th className="px-4 py-3">Contact</th>
+              <th className="px-4 py-3">Service Revenue</th>
+              <th className="px-4 py-3">Pipeline</th>
               <th className="px-4 py-3">Accounts</th>
               <th className="px-4 py-3">Total Value</th>
               <th className="px-4 py-3">Extracted</th>
@@ -70,7 +89,7 @@ export default async function ClientsPage() {
             </tr>
           </thead>
           <tbody className="divide-y divide-white/5">
-            {rows.map(({ client, accountCount, totals }) => (
+            {rows.map(({ client, accountCount, serviceRevenue, pipelineValue, totals }) => (
               <tr key={client.id}>
                 <td className="px-4 py-3">
                   <Link
@@ -86,6 +105,8 @@ export default async function ClientsPage() {
                     <span className="block text-xs text-fog-600">{client.phone}</span>
                   )}
                 </td>
+                <td className="px-4 py-3 text-fog-200">{formatCurrency(serviceRevenue)}</td>
+                <td className="px-4 py-3 text-fog-400">{formatCurrency(pipelineValue)}</td>
                 <td className="px-4 py-3 text-fog-400">{accountCount}</td>
                 <td className="px-4 py-3 text-fog-200">{formatCurrency(totals.totalValue)}</td>
                 <td className="px-4 py-3 text-fog-400">{formatCurrency(totals.totalExtracted)}</td>
@@ -94,7 +115,7 @@ export default async function ClientsPage() {
             ))}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-fog-600">
+                <td colSpan={8} className="px-4 py-8 text-center text-fog-600">
                   No clients yet — add one from Trading.
                 </td>
               </tr>

@@ -22,8 +22,22 @@ export default function ProblemSection() {
             <RevealOnScroll
               key={problem.title}
               delay={i * 0.05}
-              className="group relative bg-ink-900 p-8 transition-colors duration-300 hover:bg-ink-800"
+              className="alive-panel group relative bg-ink-900 p-8 transition-all duration-500 hover:-translate-y-0.5 hover:bg-ink-800"
             >
+              <motion.div
+                aria-hidden
+                className="absolute inset-x-6 top-0 h-px bg-gradient-to-r from-transparent via-gold/50 to-transparent"
+                initial={{ scaleX: 0, opacity: 0 }}
+                whileInView={{ scaleX: 1, opacity: 1 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.9, delay: i * 0.06 }}
+              />
+              <motion.div
+                aria-hidden
+                className="absolute -right-10 -top-10 h-28 w-28 rounded-full border border-gold/10"
+                animate={{ rotate: [0, 90, 180], scale: [1, 1.08, 1] }}
+                transition={{ duration: 9 + i, repeat: Infinity, ease: "linear" }}
+              />
               <AlertTriangle
                 className="h-5 w-5 text-gold transition-transform duration-300 group-hover:-translate-y-0.5"
                 strokeWidth={1.75}

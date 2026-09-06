@@ -55,10 +55,11 @@ function buildLattice() {
 }
 
 function LatticeField() {
-  const { targets, starts, segments } = useMemo(buildLattice, []);
+  const { targets, starts, segments } = useMemo(() => buildLattice(), []);
   const groupRef = useRef<THREE.Group>(null);
   const pointsGeoRef = useRef<THREE.BufferGeometry>(null);
   const linesGeoRef = useRef<THREE.BufferGeometry>(null);
+  const lightRef = useRef<THREE.PointLight>(null);
   const progress = useRef(0);
   const current = useRef(new Float32Array(starts));
   const rot = useRef({ x: 0, y: 0 });
@@ -74,15 +75,32 @@ function LatticeField() {
     const t = easeOutCubic(progress.current);
     const time = state.clock.elapsedTime;
 
+    // Interactive pointer repulsion coordinates in world space
+    const mx = state.pointer.x * 5.2;
+    const my = state.pointer.y * 3.1;
+
     for (let i = 0; i < COUNT; i++) {
       const bx = starts[i * 3] + (targets[i * 3] - starts[i * 3]) * t;
       const by = starts[i * 3 + 1] + (targets[i * 3 + 1] - starts[i * 3 + 1]) * t;
       const bz = starts[i * 3 + 2] + (targets[i * 3 + 2] - starts[i * 3 + 2]) * t;
 
       const bend = Math.sin(time * 0.5 + bx * 0.6) * 0.18 * t;
-      const x = bx;
-      const y = by + bend;
-      const z = bz + Math.cos(time * 0.35 + by * 0.5) * 0.12 * t;
+      let x = bx;
+      let y = by + bend;
+      let z = bz + Math.cos(time * 0.35 + by * 0.5) * 0.12 * t;
+
+      // Mouse repulsion field
+      const dx = x - mx;
+      const dy = y - my;
+      const distSq = dx * dx + dy * dy;
+      const radius = 2.8;
+      if (distSq < radius * radius && distSq > 0.001) {
+        const dist = Math.sqrt(distSq);
+        const force = Math.pow(1 - dist / radius, 2) * 0.95 * t;
+        x += (dx / dist) * force;
+        y += (dy / dist) * force;
+        z += force * 0.7;
+      }
 
       current.current[i * 3] = x;
       current.current[i * 3 + 1] = y;
@@ -109,45 +127,42 @@ function LatticeField() {
     }
 
     if (groupRef.current) {
-      const targetY = state.pointer.x * 0.32 + time * 0.025;
-      const targetX = state.pointer.y * -0.16;
+      const targetY = state.pointer.x * 0.35 + time * 0.03;
+      const targetX = state.pointer.y * -0.18;
       rot.current.y += (targetY - rot.current.y) * 0.04;
       rot.current.x += (targetX - rot.current.x) * 0.04;
       groupRef.current.rotation.y = rot.current.y;
       groupRef.current.rotation.x = rot.current.x;
     }
+
+    if (lightRef.current) {
+      lightRef.current.position.x = Math.sin(time * 0.7) * 4.5;
+      lightRef.current.position.y = Math.cos(time * 0.5) * 2.8;
+      lightRef.current.position.z = 2.5 + Math.sin(time * 0.4) * 1.2;
+    }
   });
 
   return (
     <group ref={groupRef}>
+      <pointLight ref={lightRef} color="#C6A159" intensity={3.5} distance={12} />
       <points>
         <bufferGeometry ref={pointsGeoRef}>
-          <bufferAttribute
-            attach="attributes-position"
-            count={COUNT}
-            array={positions}
-            itemSize={3}
-          />
+          <bufferAttribute attach="attributes-position" args={[positions, 3]} />
         </bufferGeometry>
         <pointsMaterial
-          size={0.055}
-          color="#E8D4A0"
+          size={0.065}
+          color="#F2DFB3"
           transparent
-          opacity={0.95}
+          opacity={0.98}
           sizeAttenuation
           depthWrite={false}
         />
       </points>
       <lineSegments>
         <bufferGeometry ref={linesGeoRef}>
-          <bufferAttribute
-            attach="attributes-position"
-            count={segments.length * 2}
-            array={linePositions}
-            itemSize={3}
-          />
+          <bufferAttribute attach="attributes-position" args={[linePositions, 3]} />
         </bufferGeometry>
-        <lineBasicMaterial color="#9BA1A8" transparent opacity={0.32} depthWrite={false} />
+        <lineBasicMaterial color="#9BA1A8" transparent opacity={0.36} depthWrite={false} />
       </lineSegments>
     </group>
   );
@@ -170,6 +185,7 @@ export default function HeroScene() {
       gl={{ antialias: true, alpha: true }}
       className="!absolute inset-0"
     >
+      <ambientLight intensity={0.4} />
       <Rig />
       <WatermarkPlane />
       <LatticeField />

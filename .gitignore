@@ -28,3 +28,9 @@ next-env.d.ts
 # editor
 .vscode/*
 !.vscode/extensions.json
+.claude/
+
+# temporary & scratch files
+/tmp/
+
+

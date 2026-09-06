@@ -32,7 +32,7 @@ export default function ScoreTeaser() {
         </RevealOnScroll>
 
         <RevealOnScroll delay={0.1} className="flex justify-center lg:justify-end">
-          <div className="relative rounded-3xl border border-white/10 bg-white/[0.02] p-10 backdrop-blur-sm">
+          <div className="alive-panel premium-panel relative rounded-xl p-10 backdrop-blur-sm">
             <div className="pointer-events-none absolute -inset-px rounded-3xl bg-bend-gradient-soft opacity-40" />
             <div className="relative flex flex-col items-center">
               <RadialGauge score={68} label="Flexibility" />

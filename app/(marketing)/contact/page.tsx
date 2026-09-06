@@ -75,9 +75,6 @@ export default function ContactPage({
                   hello@flectere.com
                 </a>
               </p>
-              <p className="mt-1 text-xs text-fog-600">
-                (Placeholder address — update with your real inbox.)
-              </p>
             </div>
 
             <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-7">

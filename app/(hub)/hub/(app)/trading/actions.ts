@@ -9,7 +9,7 @@ import { createClient } from "@/lib/supabase/server";
 // not just skipped in the UI.
 
 export async function createClientAction(formData: FormData) {
-  const supabase = createClient();
+  const supabase = await createClient();
 
   const name = String(formData.get("name") || "").trim();
   if (!name) return;
@@ -23,7 +23,7 @@ export async function createClientAction(formData: FormData) {
 }
 
 export async function createAccountAction(formData: FormData) {
-  const supabase = createClient();
+  const supabase = await createClient();
 
   const label = String(formData.get("label") || "").trim();
   if (!label) return;
@@ -46,7 +46,7 @@ export async function createAccountAction(formData: FormData) {
 }
 
 export async function addPerformanceEntryAction(formData: FormData) {
-  const supabase = createClient();
+  const supabase = await createClient();
 
   const accountId = String(formData.get("account_id") || "");
   const entryDate = String(formData.get("entry_date") || "");
@@ -69,7 +69,7 @@ export async function addPerformanceEntryAction(formData: FormData) {
 }
 
 export async function addExpenseAction(formData: FormData) {
-  const supabase = createClient();
+  const supabase = await createClient();
 
   const amountRaw = formData.get("amount");
   const incurredOn = String(formData.get("incurred_on") || "");

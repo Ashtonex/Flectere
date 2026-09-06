@@ -6,16 +6,24 @@ import {
   formatCurrency,
   formatPercent,
 } from "@/lib/hub/analytics";
+import { armName, labelize, serviceName, sumRevenue, weightedPipeline } from "@/lib/hub/crm";
+import { documentTypes } from "@/lib/hub/invoices";
 import type {
+  BusinessArm,
   Client,
   ClientDocument,
+  CrmActivity,
+  CrmOpportunity,
   Expense,
   PerformanceEntry,
+  RevenueRecord,
+  Service,
   TradingAccount,
   Withdrawal,
 } from "@/lib/hub/types";
 import {
   addWithdrawalAction,
+  createClientPortalLoginAction,
   deleteDocumentAction,
   updateClientAction,
   uploadDocumentAction,
@@ -27,8 +35,14 @@ const labelClasses = "mb-1.5 block text-xs uppercase tracking-widest2 text-fog-5
 const submitClasses =
   "mt-2 rounded-lg border border-gold/50 bg-ink-900 px-4 py-2 text-sm font-medium text-gold transition-colors hover:border-gold hover:bg-gold hover:text-ink-950";
 
-export default async function ClientDetailPage({ params }: { params: { id: string } }) {
-  const supabase = createClient();
+export default async function ClientDetailPage({
+  params,
+  searchParams,
+}: {
+  params: { id: string };
+  searchParams?: { portal?: string };
+}) {
+  const supabase = await createClient();
 
   const { data: client } = await supabase
     .from("clients")
@@ -38,25 +52,50 @@ export default async function ClientDetailPage({ params }: { params: { id: strin
 
   if (!client) notFound();
 
+  const { data: accounts } = await supabase
+    .from("trading_accounts")
+    .select("*")
+    .eq("client_id", params.id);
+  const accountList = (accounts ?? []) as TradingAccount[];
+  const accountIds = accountList.map((a) => a.id);
+
   const [
-    { data: accounts },
     { data: entries },
     { data: expenses },
     { data: withdrawals },
     { data: documents },
+    { data: arms },
+    { data: services },
+    { data: opportunities },
+    { data: activities },
+    { data: revenue },
   ] = await Promise.all([
-    supabase.from("trading_accounts").select("*").eq("client_id", params.id),
-    supabase.from("performance_entries").select("*"),
-    supabase.from("expenses").select("*"),
-    supabase.from("withdrawals").select("*"),
+    accountIds.length > 0
+      ? supabase.from("performance_entries").select("*").in("account_id", accountIds)
+      : Promise.resolve({ data: [] }),
+    accountIds.length > 0
+      ? supabase.from("expenses").select("*").in("account_id", accountIds)
+      : Promise.resolve({ data: [] }),
+    accountIds.length > 0
+      ? supabase.from("withdrawals").select("*").in("account_id", accountIds)
+      : Promise.resolve({ data: [] }),
     supabase.from("documents").select("*").eq("client_id", params.id).order("uploaded_at", { ascending: false }),
+    supabase.from("business_arms").select("*").order("name"),
+    supabase.from("services").select("*").order("name"),
+    supabase.from("crm_opportunities").select("*").eq("client_id", params.id).order("updated_at", { ascending: false }),
+    supabase.from("crm_activities").select("*").eq("client_id", params.id).order("activity_date", { ascending: false }),
+    supabase.from("revenue_records").select("*").eq("client_id", params.id).order("recorded_on", { ascending: false }),
   ]);
 
-  const accountList = (accounts ?? []) as TradingAccount[];
   const entryList = (entries ?? []) as PerformanceEntry[];
   const expenseList = (expenses ?? []) as Expense[];
   const withdrawalList = (withdrawals ?? []) as Withdrawal[];
   const documentList = (documents ?? []) as ClientDocument[];
+  const armList = (arms ?? []) as BusinessArm[];
+  const serviceList = (services ?? []) as Service[];
+  const opportunityList = (opportunities ?? []) as CrmOpportunity[];
+  const activityList = (activities ?? []) as CrmActivity[];
+  const revenueList = (revenue ?? []) as RevenueRecord[];
 
   const analytics = accountList.map((account) =>
     computeAccountAnalytics(
@@ -67,6 +106,20 @@ export default async function ClientDetailPage({ params }: { params: { id: strin
     )
   );
   const totals = computePortfolioTotals(analytics);
+  const serviceRevenue = sumRevenue(revenueList, ["received"]);
+  const bookedRevenue = sumRevenue(revenueList, ["received", "invoiced"]);
+  const pipelineValue = weightedPipeline(opportunityList);
+  const portalStatus = searchParams?.portal;
+  const portalMessage =
+    portalStatus === "login-ready"
+      ? "Client portal login is ready. Share the temporary password securely."
+      : portalStatus === "invalid"
+        ? "Enter a client email and a temporary password with at least 8 characters."
+        : portalStatus === "unauthorized"
+          ? "Only internal users can manage client portal access."
+          : portalStatus === "error"
+            ? "Could not create or update the client portal login."
+            : null;
 
   const documentsWithUrls = await Promise.all(
     documentList.map(async (doc) => {
@@ -82,6 +135,25 @@ export default async function ClientDetailPage({ params }: { params: { id: strin
       <div>
         <h1 className="font-display text-2xl text-fog-100">{(client as Client).name}</h1>
         <p className="mt-1 text-sm text-fog-500">Client profile, accounts, and documents.</p>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
+        <div className="rounded-xl border border-gold/25 bg-gold/5 p-5">
+          <p className="text-xs uppercase tracking-widest2 text-gold">Service Revenue</p>
+          <p className="mt-2 font-display text-xl text-fog-100">{formatCurrency(serviceRevenue)}</p>
+        </div>
+        <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
+          <p className="text-xs uppercase tracking-widest2 text-fog-500">Booked Revenue</p>
+          <p className="mt-2 font-display text-xl text-fog-100">{formatCurrency(bookedRevenue)}</p>
+        </div>
+        <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
+          <p className="text-xs uppercase tracking-widest2 text-fog-500">Weighted Pipeline</p>
+          <p className="mt-2 font-display text-xl text-fog-100">{formatCurrency(pipelineValue)}</p>
+        </div>
+        <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
+          <p className="text-xs uppercase tracking-widest2 text-fog-500">Activities</p>
+          <p className="mt-2 font-display text-xl text-fog-100">{activityList.length}</p>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
@@ -104,8 +176,109 @@ export default async function ClientDetailPage({ params }: { params: { id: strin
       </div>
 
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
+        <div className="overflow-x-auto rounded-xl border border-white/10">
+          <table className="w-full text-left text-sm">
+            <thead className="border-b border-white/10 text-xs uppercase tracking-widest2 text-fog-500">
+              <tr>
+                <th className="px-4 py-3">Opportunity</th>
+                <th className="px-4 py-3">Arm</th>
+                <th className="px-4 py-3">Stage</th>
+                <th className="px-4 py-3">Value</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/5">
+              {opportunityList.map((opportunity) => (
+                <tr key={opportunity.id}>
+                  <td className="px-4 py-3 text-fog-100">{opportunity.title}</td>
+                  <td className="px-4 py-3 text-fog-400">{armName(opportunity.business_arm_id, armList)}</td>
+                  <td className="px-4 py-3 text-fog-400">{labelize(opportunity.stage)}</td>
+                  <td className="px-4 py-3 text-fog-200">{formatCurrency(opportunity.value)}</td>
+                </tr>
+              ))}
+              {opportunityList.length === 0 && (
+                <tr>
+                  <td colSpan={4} className="px-4 py-8 text-center text-fog-600">
+                    No CRM opportunities for this client yet.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="rounded-xl border border-white/10 bg-white/[0.02] p-6">
+          <h2 className="font-display text-lg text-fog-100">Recent CRM Activity</h2>
+          <ul className="mt-4 divide-y divide-white/5">
+            {activityList.slice(0, 6).map((activity) => (
+              <li key={activity.id} className="py-3">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-sm text-fog-100">{activity.subject}</p>
+                  <span className="shrink-0 text-xs text-fog-600">
+                    {new Date(activity.activity_date).toLocaleDateString()}
+                  </span>
+                </div>
+                <p className="mt-1 text-xs text-fog-500">
+                  {labelize(activity.activity_type)} · {armName(activity.business_arm_id, armList)}
+                </p>
+                {activity.next_step && <p className="mt-1 text-xs text-gold">Next: {activity.next_step}</p>}
+              </li>
+            ))}
+            {activityList.length === 0 && (
+              <li className="py-3 text-sm text-fog-600">No activity logged yet.</li>
+            )}
+          </ul>
+        </div>
+      </div>
+
+      <div className="overflow-x-auto rounded-xl border border-white/10">
+        <table className="w-full text-left text-sm">
+          <thead className="border-b border-white/10 text-xs uppercase tracking-widest2 text-fog-500">
+            <tr>
+              <th className="px-4 py-3">Revenue</th>
+              <th className="px-4 py-3">Arm</th>
+              <th className="px-4 py-3">Service</th>
+              <th className="px-4 py-3">Status</th>
+              <th className="px-4 py-3">Date</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-white/5">
+            {revenueList.map((record) => (
+              <tr key={record.id}>
+                <td className="px-4 py-3 text-fog-100">{formatCurrency(record.amount)}</td>
+                <td className="px-4 py-3 text-fog-400">{armName(record.business_arm_id, armList)}</td>
+                <td className="px-4 py-3 text-fog-400">{serviceName(record.service_id, serviceList)}</td>
+                <td className="px-4 py-3 text-fog-400">{labelize(record.status)}</td>
+                <td className="px-4 py-3 text-fog-500">
+                  {new Date(record.recorded_on).toLocaleDateString()}
+                </td>
+              </tr>
+            ))}
+            {revenueList.length === 0 && (
+              <tr>
+                <td colSpan={5} className="px-4 py-8 text-center text-fog-600">
+                  No CRM revenue recorded for this client yet.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
         <div className="rounded-xl border border-white/10 bg-white/[0.02] p-6">
           <h2 className="font-display text-lg text-fog-100">Contact Info</h2>
+          {portalMessage && (
+            <p
+              className={[
+                "mt-3 rounded-lg border px-3 py-2 text-xs",
+                portalStatus === "login-ready"
+                  ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-300"
+                  : "border-red-500/20 bg-red-500/10 text-red-300",
+              ].join(" ")}
+            >
+              {portalMessage}
+            </p>
+          )}
           <form action={updateClientAction} className="mt-4 space-y-4">
             <input type="hidden" name="id" value={(client as Client).id} />
             <div>
@@ -144,6 +317,51 @@ export default async function ClientDetailPage({ params }: { params: { id: strin
             </div>
             <button type="submit" className={submitClasses}>
               Save
+            </button>
+          </form>
+        </div>
+
+        <div className="rounded-xl border border-white/10 bg-white/[0.02] p-6">
+          <h2 className="font-display text-lg text-fog-100">Client Portal Access</h2>
+          <p className="mt-1 text-xs text-fog-500">
+            Create or reset this client&apos;s login for the portal.
+          </p>
+          <form action={createClientPortalLoginAction} className="mt-4 space-y-4">
+            <input type="hidden" name="client_id" value={(client as Client).id} />
+            <div>
+              <label className={labelClasses}>Full Name</label>
+              <input
+                name="full_name"
+                defaultValue={(client as Client).name}
+                className={inputClasses}
+              />
+            </div>
+            <div>
+              <label className={labelClasses}>Login Email</label>
+              <input
+                name="email"
+                type="email"
+                required
+                defaultValue={(client as Client).contact_email ?? ""}
+                className={inputClasses}
+              />
+            </div>
+            <div>
+              <label className={labelClasses}>Temporary Password</label>
+              <input
+                name="password"
+                type="password"
+                required
+                minLength={8}
+                autoComplete="new-password"
+                className={inputClasses}
+              />
+              <p className="mt-1 text-xs text-fog-600">
+                Use a fresh temporary password and send it through a secure channel.
+              </p>
+            </div>
+            <button type="submit" className={submitClasses}>
+              Create / Reset Portal Login
             </button>
           </form>
         </div>
@@ -244,8 +462,9 @@ export default async function ClientDetailPage({ params }: { params: { id: strin
                   <span className="text-sm text-fog-400">{doc.label}</span>
                 )}
                 <p className="text-xs text-fog-600">
-                  {new Date(doc.uploaded_at).toLocaleDateString()}
+                  {labelize(doc.document_type)} · {new Date(doc.uploaded_at).toLocaleDateString()}
                 </p>
+                {doc.notes && <p className="mt-1 text-xs text-fog-500">{doc.notes}</p>}
               </div>
               <form action={deleteDocumentAction}>
                 <input type="hidden" name="id" value={doc.id} />
@@ -268,6 +487,16 @@ export default async function ClientDetailPage({ params }: { params: { id: strin
             <label className={labelClasses}>Label</label>
             <input name="label" required className={inputClasses} placeholder="e.g. Signed agreement" />
           </div>
+          <div className="w-44">
+            <label className={labelClasses}>Type</label>
+            <select name="document_type" className={inputClasses}>
+              {documentTypes.map((type) => (
+                <option key={type} value={type}>
+                  {labelize(type)}
+                </option>
+              ))}
+            </select>
+          </div>
           <div className="flex-1">
             <label className={labelClasses}>File</label>
             <input
@@ -277,6 +506,10 @@ export default async function ClientDetailPage({ params }: { params: { id: strin
               accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx"
               className="block w-full text-sm text-fog-300 file:mr-3 file:rounded-lg file:border file:border-white/10 file:bg-white/[0.03] file:px-3 file:py-1.5 file:text-sm file:text-fog-200"
             />
+          </div>
+          <div className="basis-full">
+            <label className={labelClasses}>Notes</label>
+            <input name="notes" className={inputClasses} placeholder="Optional context for this document" />
           </div>
           <button type="submit" className={submitClasses}>
             Upload
