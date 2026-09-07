@@ -14,6 +14,7 @@ import type {
   RevenueRecord,
   Service,
 } from "@/lib/hub/types";
+import { ArmDetailModal } from "@/components/hub/ArmDetailModal";
 
 interface ArmRow {
   arm: BusinessArm;
@@ -70,6 +71,7 @@ export function ExecutiveDashboardClient({
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedArmFilter, setSelectedArmFilter] = useState<string>("all");
   const [selectedStageFilter, setSelectedStageFilter] = useState<string>("all");
+  const [selectedArmModal, setSelectedArmModal] = useState<BusinessArm | null>(null);
 
   // Computed metrics
   const activeOpportunities = useMemo(
@@ -502,9 +504,18 @@ export function ExecutiveDashboardClient({
                   </thead>
                   <tbody className="divide-y divide-white/5">
                     {initialArmRows.slice(0, 6).map((row) => (
-                      <tr key={row.arm.id} className="hover:bg-white/[0.02] transition-colors">
+                      <tr
+                        key={row.arm.id}
+                        onClick={() => setSelectedArmModal(row.arm)}
+                        className="hover:bg-white/[0.04] transition-colors cursor-pointer group"
+                      >
                         <td className="px-4 py-3">
-                          <div className="font-medium text-fog-100">{row.arm.name}</div>
+                          <div className="font-medium text-fog-100 group-hover:text-gold transition-colors flex items-center gap-1.5">
+                            {row.arm.name}
+                            <span className="text-[10px] text-fog-500 opacity-0 group-hover:opacity-100 transition-opacity">
+                              ➔
+                            </span>
+                          </div>
                           <div className="text-[10px] text-fog-500 capitalize">Status: {row.arm.status}</div>
                         </td>
                         <td className="px-4 py-3">
@@ -523,6 +534,7 @@ export function ExecutiveDashboardClient({
                         </td>
                       </tr>
                     ))}
+
                   </tbody>
                 </table>
               </div>
@@ -719,11 +731,12 @@ export function ExecutiveDashboardClient({
             {filteredArmRows.map((row) => (
               <div
                 key={row.arm.id}
-                className="rounded-xl border border-white/10 bg-white/[0.02] p-5 hover:border-gold/30 hover:bg-white/[0.04] transition-all flex flex-col justify-between"
+                onClick={() => setSelectedArmModal(row.arm)}
+                className="cursor-pointer group rounded-xl border border-white/10 bg-white/[0.02] p-5 hover:border-gold/50 hover:bg-white/[0.04] transition-all flex flex-col justify-between hover:shadow-[0_0_20px_rgba(207,175,99,0.08)]"
               >
                 <div>
                   <div className="flex items-start justify-between gap-2">
-                    <h3 className="font-display text-base text-fog-100 font-semibold">
+                    <h3 className="font-display text-base text-fog-100 font-semibold group-hover:text-gold transition">
                       {row.arm.name}
                     </h3>
                     <span className="rounded bg-white/5 border border-white/10 px-2 py-0.5 text-[10px] text-fog-400 uppercase tracking-widest2">
@@ -740,30 +753,40 @@ export function ExecutiveDashboardClient({
                   )}
                 </div>
 
-                <div className="mt-5 pt-4 border-t border-white/5 grid grid-cols-2 gap-2 text-xs">
-                  <div>
-                    <span className="text-[10px] uppercase tracking-widest2 text-fog-500 block">Revenue</span>
-                    <span className="font-mono font-semibold text-emerald-400">
-                      {formatCurrency(row.receivedRevenue)}
+                <div>
+                  <div className="mt-5 pt-4 border-t border-white/5 grid grid-cols-2 gap-2 text-xs">
+                    <div>
+                      <span className="text-[10px] uppercase tracking-widest2 text-fog-500 block">Revenue</span>
+                      <span className="font-mono font-semibold text-emerald-400">
+                        {formatCurrency(row.receivedRevenue)}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] uppercase tracking-widest2 text-fog-500 block">Pipeline</span>
+                      <span className="font-mono font-semibold text-fog-200">
+                        {formatCurrency(row.pipelineValue)}
+                      </span>
+                    </div>
+                    <div className="mt-1">
+                      <span className="text-[10px] uppercase tracking-widest2 text-fog-500 block">Clients</span>
+                      <span className="font-mono text-fog-300">{row.clientCount} Active</span>
+                    </div>
+                    <div className="mt-1">
+                      <span className="text-[10px] uppercase tracking-widest2 text-fog-500 block">Services</span>
+                      <span className="font-mono text-fog-300">{row.serviceCount} Catalog</span>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between text-xs">
+                    <span className="text-[11px] text-gold font-medium group-hover:underline">
+                      View Blueprint & Subscribers ➔
                     </span>
-                  </div>
-                  <div>
-                    <span className="text-[10px] uppercase tracking-widest2 text-fog-500 block">Pipeline</span>
-                    <span className="font-mono font-semibold text-fog-200">
-                      {formatCurrency(row.pipelineValue)}
-                    </span>
-                  </div>
-                  <div className="mt-1">
-                    <span className="text-[10px] uppercase tracking-widest2 text-fog-500 block">Clients</span>
-                    <span className="font-mono text-fog-300">{row.clientCount} Active</span>
-                  </div>
-                  <div className="mt-1">
-                    <span className="text-[10px] uppercase tracking-widest2 text-fog-500 block">Services</span>
-                    <span className="font-mono text-fog-300">{row.serviceCount} Catalog</span>
+                    <span className="text-[10px] text-fog-500 font-mono">Dossier</span>
                   </div>
                 </div>
               </div>
             ))}
+
           </div>
         </div>
       )}
@@ -1023,6 +1046,19 @@ export function ExecutiveDashboardClient({
           </div>
         </div>
       )}
+
+      {/* Universal Arm Detail Modal */}
+      <ArmDetailModal
+        arm={selectedArmModal}
+        isOpen={Boolean(selectedArmModal)}
+        onClose={() => setSelectedArmModal(null)}
+        services={initialServices}
+        clients={initialClients}
+        leads={initialLeads}
+        opportunities={initialOpportunities}
+        revenueRecords={initialRevenue}
+      />
     </div>
   );
 }
+

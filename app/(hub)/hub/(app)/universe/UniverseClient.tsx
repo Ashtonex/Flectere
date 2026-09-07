@@ -5,7 +5,8 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { type SectorOrb, type StarHealth } from "@/components/visuals/UniverseConstellationScene";
 import { formatCurrency } from "@/lib/hub/analytics";
-import type { BusinessArm, Client, CrmOpportunity, Invoice, Service } from "@/lib/hub/types";
+import type { BusinessArm, Client, CrmOpportunity, Invoice, RevenueRecord, Service } from "@/lib/hub/types";
+import { ArmDetailModal } from "@/components/hub/ArmDetailModal";
 
 const UniverseConstellationScene = dynamic(
   () => import("@/components/visuals/UniverseConstellationScene"),
@@ -19,9 +20,11 @@ interface UniverseClientProps {
   opportunities: CrmOpportunity[];
   services: Service[];
   invoices: Invoice[];
+  revenueRecords?: RevenueRecord[];
   totalReceived: number;
   totalPipeline: number;
 }
+
 
 export function UniverseClient({
   orbs,
@@ -30,6 +33,7 @@ export function UniverseClient({
   opportunities,
   services,
   invoices,
+  revenueRecords = [],
   totalReceived,
   totalPipeline,
 }: UniverseClientProps) {
@@ -37,6 +41,7 @@ export function UniverseClient({
   const [selectedKey, setSelectedKey] = useState<string>(orbs[0]?.key ?? "aedificium");
   const [isOverloaded, setIsOverloaded] = useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [selectedArmModal, setSelectedArmModal] = useState<BusinessArm | null>(null);
 
   const selectedOrb = sectors.find((s) => s.key === selectedKey) ?? sectors[0];
   const currentIndex = sectors.findIndex((o) => o.key === selectedKey);
@@ -188,22 +193,37 @@ export function UniverseClient({
             </div>
 
             {/* Actions */}
-            <div className="pt-1 flex gap-2">
-              <Link
-                href="/hub/crm"
-                className="flex-1 text-center rounded-lg bg-gold hover:bg-gold-bright text-ink-950 font-bold text-xs py-2 transition shadow-md"
+            <div className="pt-1 flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  if (selectedArm) {
+                    setSelectedArmModal(selectedArm);
+                  }
+                }}
+                className="w-full text-center rounded-lg bg-gold hover:bg-gold-bright text-ink-950 font-bold text-xs py-2 transition shadow-md cursor-pointer flex items-center justify-center gap-1.5"
               >
-                View in CRM ➔
-              </Link>
-              <Link
-                href="/hub/arms"
-                className="rounded-lg border border-white/10 px-3 py-2 text-xs text-fog-300 hover:text-white hover:bg-white/5 transition flex items-center"
-              >
-                Arm Details
-              </Link>
+                <span>📜</span> Arm Dossier & Subscribers ➔
+              </button>
+
+              <div className="flex gap-2">
+                <Link
+                  href="/hub/crm"
+                  className="flex-1 text-center rounded-lg border border-white/15 bg-white/[0.04] hover:bg-white/10 text-fog-200 font-semibold text-xs py-1.5 transition"
+                >
+                  View in CRM ➔
+                </Link>
+                <Link
+                  href="/hub/arms"
+                  className="rounded-lg border border-white/15 bg-white/[0.04] px-3 py-1.5 text-xs text-fog-300 hover:text-white hover:bg-white/10 transition flex items-center"
+                >
+                  All Arms
+                </Link>
+              </div>
             </div>
           </div>
         )}
+
 
         {/* Bottom Celestial Orbit Dock */}
         <div className="flex items-center justify-between gap-3 overflow-x-auto rounded-2xl border border-white/10 bg-black/75 p-3 backdrop-blur-xl mb-10">
@@ -361,10 +381,20 @@ export function UniverseClient({
               </Link>
             </div>
           </div>
-
         </div>
       </div>
 
+      {/* Universal Arm Detail & Subscriber Dossier Modal */}
+      <ArmDetailModal
+        arm={selectedArmModal}
+        isOpen={Boolean(selectedArmModal)}
+        onClose={() => setSelectedArmModal(null)}
+        services={services}
+        clients={clients}
+        opportunities={opportunities}
+        revenueRecords={revenueRecords}
+      />
     </div>
   );
 }
+

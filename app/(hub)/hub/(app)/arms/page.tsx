@@ -11,6 +11,7 @@ import type {
   Service,
 } from "@/lib/hub/types";
 import { createBusinessArmAction, createServiceAction } from "../crm/actions";
+import { BusinessArmsClient } from "./BusinessArmsClient";
 
 const inputClasses =
   "w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-fog-100 outline-none transition-colors focus:border-gold/50";
@@ -134,68 +135,17 @@ export default async function BusinessArmsPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        {rows.map((row) => {
-          const armServices = serviceList.filter((service) => service.business_arm_id === row.arm.id);
-          return (
-            <section key={row.arm.id} className="rounded-xl border border-white/10 bg-white/[0.02] p-6">
-              <div className="flex flex-wrap items-start justify-between gap-4">
-                <div>
-                  <p className="text-xs uppercase tracking-widest2 text-gold">{row.arm.sector}</p>
-                  <h2 className="mt-2 font-display text-xl text-fog-100">{row.arm.name}</h2>
-                  <p className="mt-1 text-sm capitalize text-fog-500">{labelize(row.arm.status)}</p>
-                </div>
-                <div className="text-right">
-                  <p className="text-xs uppercase tracking-widest2 text-fog-500">Revenue</p>
-                  <p className="mt-1 font-display text-xl text-fog-100">
-                    {formatCurrency(row.receivedRevenue)}
-                  </p>
-                </div>
-              </div>
-
-              {row.arm.description && (
-                <p className="mt-4 text-sm leading-6 text-fog-400">{row.arm.description}</p>
-              )}
-
-              <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
-                <div>
-                  <p className="text-xs text-fog-500">Clients</p>
-                  <p className="mt-1 text-fog-100">{row.clientCount}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-fog-500">Pipeline</p>
-                  <p className="mt-1 text-fog-100">{formatCurrency(row.pipelineValue)}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-fog-500">Booked</p>
-                  <p className="mt-1 text-fog-100">{formatCurrency(row.bookedRevenue)}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-fog-500">Target</p>
-                  <p className="mt-1 text-fog-100">{formatPercent(row.progress)}</p>
-                </div>
-              </div>
-
-              <div className="mt-6 border-t border-white/10 pt-4">
-                <p className="text-xs uppercase tracking-widest2 text-fog-500">Services</p>
-                <ul className="mt-3 divide-y divide-white/5">
-                  {armServices.map((service) => (
-                    <li key={service.id} className="flex items-center justify-between gap-4 py-2">
-                      <span className="text-sm text-fog-200">{service.name}</span>
-                      <span className="text-xs text-fog-500">
-                        {service.default_price ? formatCurrency(service.default_price) : labelize(service.status)}
-                      </span>
-                    </li>
-                  ))}
-                  {armServices.length === 0 && (
-                    <li className="py-2 text-sm text-fog-600">No services linked yet.</li>
-                  )}
-                </ul>
-              </div>
-            </section>
-          );
-        })}
-      </div>
+      <BusinessArmsClient
+        rows={rows}
+        armList={armList}
+        serviceList={serviceList}
+        clientList={(clients ?? []) as Client[]}
+        leadList={(leads ?? []) as Lead[]}
+        opportunityList={(opportunities ?? []) as CrmOpportunity[]}
+        activityList={(activities ?? []) as CrmActivity[]}
+        revenueList={(revenue ?? []) as RevenueRecord[]}
+      />
     </div>
   );
 }
+

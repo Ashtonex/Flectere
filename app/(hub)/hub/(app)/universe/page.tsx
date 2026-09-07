@@ -79,8 +79,10 @@ export default async function UniversePage() {
       opportunities={opportunityList}
       services={serviceList}
       invoices={invoiceList}
+      revenueRecords={revenueList}
       totalReceived={totalReceived}
       totalPipeline={totalPipeline}
     />
   );
 }
+

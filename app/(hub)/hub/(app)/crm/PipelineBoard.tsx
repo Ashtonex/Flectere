@@ -26,6 +26,8 @@ import type {
   RevenueRecord,
   Service,
 } from "@/lib/hub/types";
+import { ArmDetailModal } from "@/components/hub/ArmDetailModal";
+
 import {
   createOpportunityAction,
   updateOpportunityAction,
@@ -108,6 +110,7 @@ export function PipelineBoard({
   const [selectedArmFilter, setSelectedArmFilter] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [selectedArmForModal, setSelectedArmForModal] = useState<BusinessArm | null>(null);
 
   // Global activity modal states
   const [activityModalOppId, setActivityModalOppId] = useState<string>("");
@@ -280,13 +283,29 @@ export function PipelineBoard({
                       >
                         {/* Header: Arm & Probability */}
                         <div className="flex items-start justify-between gap-1.5">
-                          <span className="rounded bg-gold/10 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-gold truncate max-w-[140px]">
-                            {armName(deal.business_arm_id, arms)}
-                          </span>
+                          {(() => {
+                            const dealArm = arms.find((a) => a.id === deal.business_arm_id);
+                            return (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (dealArm) {
+                                    setSelectedArmForModal(dealArm);
+                                  }
+                                }}
+                                title="Click to inspect Business Arm dossier & subscribers"
+                                className="rounded bg-gold/10 hover:bg-gold/25 hover:text-gold-bright border border-gold/20 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-gold truncate max-w-[140px] text-left transition cursor-pointer"
+                              >
+                                {armName(deal.business_arm_id, arms)} ℹ️
+                              </button>
+                            );
+                          })()}
                           <span className="shrink-0 text-[10px] font-mono font-bold text-fog-400">
                             {deal.probability}%
                           </span>
                         </div>
+
 
                         {/* Title & Client Link */}
                         <div>
@@ -1743,6 +1762,19 @@ export function PipelineBoard({
           </div>
         </div>
       )}
+
+      {/* Universal Arm Detail & Subscriber Dossier Modal */}
+      <ArmDetailModal
+        arm={selectedArmForModal}
+        isOpen={Boolean(selectedArmForModal)}
+        onClose={() => setSelectedArmForModal(null)}
+        services={services}
+        clients={clients}
+        leads={leads}
+        opportunities={initialOpportunities}
+        revenueRecords={revenueRecords}
+      />
     </div>
   );
 }
+
